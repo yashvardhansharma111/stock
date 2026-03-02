@@ -1194,7 +1194,7 @@ export default function DashboardPage() {
 
         {activeTab === "watchlist" && (
           <div className="space-y-3">
-            <section className="-mt-8 rounded-3xl bg-white p-4 shadow-md">
+            <section className="rounded-3xl bg-white p-4 shadow-md">
               <h2 className="text-sm font-semibold text-slate-800">Watchlist</h2>
               <p className="mt-1 text-[11px] text-slate-500">Moneycontrol view.</p>
             </section>
@@ -1211,7 +1211,7 @@ export default function DashboardPage() {
 
         {activeTab === "orders" && (
           <div className="space-y-3">
-            <section className="-mt-8 rounded-3xl bg-white p-4 shadow-md">
+            <section className="rounded-3xl bg-white p-4 shadow-md">
               <h2 className="text-sm font-semibold text-slate-800">Orders</h2>
               <div className="mt-3 flex gap-2 overflow-auto pb-1 text-[11px]">
                 {orderSegments.map((item) => (
@@ -1323,7 +1323,7 @@ export default function DashboardPage() {
 
         {activeTab === "funds" && (
           <div className="space-y-3">
-            <section className="-mt-8 rounded-3xl bg-white p-4 shadow-md">
+            <section className="rounded-3xl bg-white p-4 shadow-md">
               <h2 className="text-sm font-semibold text-slate-800">Add Funds</h2>
               <p className="mt-1 text-[11px] text-slate-500">
                 Scan the QR and submit payment details.
@@ -1439,7 +1439,7 @@ export default function DashboardPage() {
 
         {activeTab === "profile" && (
           <div className="space-y-3">
-            <section className="-mt-8 rounded-3xl bg-white p-4 shadow-md">
+            <section className="rounded-3xl bg-white p-4 shadow-md">
               <h2 className="text-sm font-semibold text-slate-800">Profile</h2>
               <p className="mt-1 text-[11px] text-slate-500">
                 Your account details.
@@ -1542,7 +1542,7 @@ export default function DashboardPage() {
 
         {activeTab === "settings" && (
           <div className="space-y-3">
-            <section className="-mt-8 rounded-3xl bg-white p-4 shadow-md">
+            <section className="rounded-3xl bg-white p-4 shadow-md">
               <h2 className="text-sm font-semibold text-slate-800">Settings</h2>
               <p className="mt-1 text-[11px] text-slate-500">
                 Account preferences and security controls.

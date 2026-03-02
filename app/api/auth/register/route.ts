@@ -12,9 +12,7 @@ export async function POST(request: Request) {
     const signatureNote = formData.get("signatureNote")?.toString() ?? "";
 
     const photo = formData.get("photo");
-    const panImage = formData.get("panImage");
-    const aadhaarImage = formData.get("aadhaarImage");
-    const signatureImage = formData.get("signatureImage");
+    // panNumber, aadhaarNumber and signatureNote are text fields now
 
     if (!fullName || !email || !phone) {
       return NextResponse.json(
@@ -39,9 +37,7 @@ export async function POST(request: Request) {
       { data: Buffer; contentType: string } | null
     > = {
       photo: null,
-      panImage: null,
-      aadhaarImage: null,
-      signatureImage: null,
+      // other document images are no longer collected
     };
 
     async function fileToDoc(
@@ -56,9 +52,7 @@ export async function POST(request: Request) {
     }
 
     documents.photo = await fileToDoc(photo);
-    documents.panImage = await fileToDoc(panImage);
-    documents.aadhaarImage = await fileToDoc(aadhaarImage);
-    documents.signatureImage = await fileToDoc(signatureImage);
+    // pan/aadhaar/signature images removed; numbers are stored separately
 
     await users.insertOne({
       fullName,
