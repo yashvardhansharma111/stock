@@ -210,8 +210,8 @@ export default function Home() {
 
       <footer className="border-t border-sky-100 bg-white/70">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-5 text-xs text-slate-500 md:flex-row">
-          <p>© {new Date().getFullYear()} Ajmeraexchange.</p>
-          <p className="text-[11px]">All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Ajmeraexchange pvt ltd. All rights reserved</p>
+          <p className="text-[11px]">privacy policy | terms and conditions</p>
         </div>
       </footer>
     </div>
