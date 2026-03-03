@@ -37,6 +37,7 @@ export async function POST(request: Request) {
       { data: Buffer; contentType: string } | null
     > = {
       photo: null,
+      signature: null,
       // other document images are no longer collected
     };
 
@@ -52,7 +53,8 @@ export async function POST(request: Request) {
     }
 
     documents.photo = await fileToDoc(photo);
-    // pan/aadhaar/signature images removed; numbers are stored separately
+    const signatureFile = formData.get("signature");
+    documents.signature = await fileToDoc(signatureFile);
 
     await users.insertOne({
       fullName,

@@ -17,7 +17,7 @@ export default function RegisterPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [panNumber, setPanNumber] = useState("");
   const [aadhaarNumber, setAadhaarNumber] = useState("");
-  const [signatureNote, setSignatureNote] = useState("");
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -39,7 +39,7 @@ export default function RegisterPage() {
       if (photoFile) formData.append("photo", photoFile);
       formData.append("panNumber", panNumber);
       formData.append("aadhaarNumber", aadhaarNumber);
-      formData.append("signatureNote", signatureNote);
+      if (signatureFile) formData.append("signature", signatureFile);
 
       const res = await fetch("/api/auth/register", {
         method: "POST",
@@ -60,7 +60,7 @@ export default function RegisterPage() {
       setPhotoFile(null);
       setPanNumber("");
       setAadhaarNumber("");
-      setSignatureNote("");
+      setSignatureFile(null);
       setStep(1);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
@@ -185,14 +185,16 @@ export default function RegisterPage() {
 
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-800">
-                  Signature Note
+                  Upload Signature
                 </label>
                 <input
-                  type="text"
-                  value={signatureNote}
-                  onChange={(e) => setSignatureNote(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none ring-sky-200/0 placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-200"
-                  placeholder="Optional signature note"
+                  type="file"
+                  accept="image/*"
+                  required
+                  onChange={(e) =>
+                    setSignatureFile(e.target.files ? e.target.files[0] : null)
+                  }
+                  className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-sky-500 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-sky-600"
                 />
               </div>
             </>
