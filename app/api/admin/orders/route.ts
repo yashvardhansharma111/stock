@@ -58,7 +58,27 @@ export async function GET(request: Request) {
       },
     });
 
-    return NextResponse.json({ config, source, scopeUserId: scopeUserId || null });
+    // derive summary from rows if present
+    const orders: OrderRow[] = Array.isArray(config.orders) ? config.orders : [];
+    function computePnl(o: OrderRow) {
+      const qty = Number(o.qty || 0);
+      const avg = Number(o.avgPrice || 0);
+      const ltp = Number(o.ltp || 0);
+      if (o.side === "BUY") {
+        return (ltp - avg) * qty;
+      }
+      return (avg - ltp) * qty;
+    }
+    const derivedSummary = {
+      dayPnl: orders.reduce((a, o) => a + computePnl(o), 0),
+      totalPnl: orders.reduce((a, o) => a + computePnl(o), 0),
+    };
+
+    return NextResponse.json({
+      config: { ...config, summary: derivedSummary },
+      source,
+      scopeUserId: scopeUserId || null,
+    });
   } catch (error) {
     console.error("Admin orders get error:", error);
     return NextResponse.json(

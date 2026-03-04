@@ -92,9 +92,29 @@ export async function GET() {
       fallback: defaultConfig,
     });
 
+    const orders: OrderRow[] = Array.isArray(config.orders)
+      ? config.orders
+      : [];
+
+    function computePnl(o: OrderRow) {
+      const qty = Number(o.qty || 0);
+      const avg = Number(o.avgPrice || 0);
+      const ltp = Number(o.ltp || 0);
+      if (o.side === "BUY") {
+        return (ltp - avg) * qty;
+      }
+      return (avg - ltp) * qty;
+    }
+
+    const derivedSummary = {
+      dayPnl: orders.reduce((a, o) => a + computePnl(o), 0),
+      totalPnl: orders.reduce((a, o) => a + computePnl(o), 0),
+    };
+
     return NextResponse.json({
       config: {
         ...config,
+        summary: derivedSummary,
         segments:
           Array.isArray(config.segments) && config.segments.length > 0
             ? config.segments

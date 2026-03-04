@@ -142,28 +142,17 @@ export default function DashboardPage() {
     async function load() {
       setError(null);
       try {
-        const [meRes, qrRes, homeRes, ordersRes] = await Promise.all([
-          fetch("/api/auth/me"),
-          fetch("/api/config/fund-qr"),
-          fetch("/api/config/dashboard-home"),
-          fetch("/api/config/orders"),
-        ]);
-
+        // fetch user first so we can show basic UI quickly
+        const meRes = await fetch("/api/auth/me");
         if (meRes.status === 401) {
           setError("Please login first.");
           setLoading(false);
           return;
         }
-
         const meData = await meRes.json();
         if (!meRes.ok) {
           throw new Error(meData.message || "Failed to load user");
         }
-
-        const qrData = await qrRes.json();
-        const homeData = await homeRes.json();
-        const ordersData = await ordersRes.json();
-
         setUser({
           fullName: meData.user.fullName,
           email: meData.user.email,
@@ -175,6 +164,19 @@ export default function DashboardPage() {
         });
         setUserPhotoUrl(`/api/auth/photo?t=${Date.now()}`);
         setUserPhotoFailed(false);
+        // user data done, hide loader now
+        setLoading(false);
+
+        // now fetch other configs in background
+        const [qrRes, homeRes, ordersRes] = await Promise.all([
+          fetch("/api/config/fund-qr"),
+          fetch("/api/config/dashboard-home"),
+          fetch("/api/config/orders"),
+        ]);
+        const qrData = await qrRes.json();
+        const homeData = await homeRes.json();
+        const ordersData = await ordersRes.json();
+
         setQrUrl(qrData.qrUrl || null);
         setPaymentMeta(qrData.paymentMeta || null);
         setQrImgFailed(false);
@@ -207,8 +209,6 @@ export default function DashboardPage() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
         setError(msg);
-      } finally {
-        setLoading(false);
       }
     }
 
@@ -389,11 +389,18 @@ export default function DashboardPage() {
     }
   }, [availableMarkets]);
 
-  const filteredOrders = (ordersConfig?.orders || []).filter(
-    (o) =>
-      (o.segmentKey || "positions") === activeOrderTool &&
-      (activeOrderMarket ? (o.market || "NSE") === activeOrderMarket : true),
-  );
+  const filteredOrders = useMemo(() => {
+    return (ordersConfig?.orders || [])
+      .filter(
+        (o) =>
+          (o.segmentKey || "positions") === activeOrderTool &&
+          (activeOrderMarket ? (o.market || "NSE") === activeOrderMarket : true),
+      )
+      .map((o) => ({
+        ...o,
+        pnl: o.pnl !== undefined ? o.pnl : computePnl(o),
+      }));
+  }, [ordersConfig, activeOrderTool, activeOrderMarket]);
   const reportDetailLines = useMemo(() => {
     if (!activeReport) return [] as string[];
     if (activeReport === "Trades and Charges") {
@@ -465,6 +472,16 @@ export default function DashboardPage() {
   function formatSignedPct(num: number) {
     const sign = num > 0 ? "+" : "";
     return `${sign}${num.toFixed(2)}%`;
+  }
+
+  function computePnl(o: OrderRow) {
+    const qty = Number(o.qty || 0);
+    const avg = Number(o.avgPrice || 0);
+    const ltp = Number(o.ltp || 0);
+    if (o.side === "BUY") {
+      return (ltp - avg) * qty;
+    }
+    return (avg - ltp) * qty;
   }
 
   async function handleFundSubmit() {
@@ -1265,24 +1282,24 @@ export default function DashboardPage() {
                   <p className="text-slate-500">Day P/L</p>
                   <p
                     className={`mt-1 text-sm font-semibold ${
-                      (ordersConfig?.summary?.dayPnl ?? 0) >= 0
+                      filteredOrders.reduce((a, o) => a + computePnl(o), 0) >= 0
                         ? "text-emerald-600"
                         : "text-rose-600"
                     }`}
                   >
-                    ₹ {money.format(ordersConfig?.summary?.dayPnl ?? 0)}
+                    ₹ {money.format(filteredOrders.reduce((a, o) => a + computePnl(o), 0))}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-slate-500">Total P/L</p>
                   <p
                     className={`mt-1 text-sm font-semibold ${
-                      (ordersConfig?.summary?.totalPnl ?? 0) >= 0
+                      filteredOrders.reduce((a, o) => a + computePnl(o), 0) >= 0
                         ? "text-emerald-600"
                         : "text-rose-600"
                     }`}
                   >
-                    ₹ {money.format(ordersConfig?.summary?.totalPnl ?? 0)}
+                    ₹ {money.format(filteredOrders.reduce((a, o) => a + computePnl(o), 0))}
                   </p>
                 </div>
               </div>
@@ -1300,51 +1317,53 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-slate-200 bg-white p-3">
-              <div className="overflow-auto rounded-2xl border border-slate-200">
-                <table className="min-w-[680px] w-full text-left text-[11px]">
-                  <thead className="bg-slate-100 text-slate-700">
-                    <tr>
-                      <th className="px-3 py-2">Market</th>
-                      <th className="px-3 py-2">Symbol</th>
-                      <th className="px-3 py-2">Side</th>
-                      <th className="px-3 py-2">Qty</th>
-                      <th className="px-3 py-2">Avg</th>
-                      <th className="px-3 py-2">LTP</th>
-                      <th className="px-3 py-2">P/L</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredOrders.map((o) => (
-                        <tr key={o.id} className="border-t border-slate-100">
-                          <td className="px-3 py-2 text-slate-700">{o.market || "NSE"}</td>
-                          <td className="px-3 py-2 font-semibold text-slate-800">
-                            {o.symbol}
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">{o.side}</td>
-                          <td className="px-3 py-2 text-slate-700">{o.qty}</td>
-                          <td className="px-3 py-2 text-slate-700">
-                            {money.format(o.avgPrice)}
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">
-                            {money.format(o.ltp)}
-                          </td>
-                          <td
-                            className={`px-3 py-2 font-semibold ${
-                              o.pnl >= 0 ? "text-emerald-600" : "text-rose-600"
-                            }`}
-                          >
-                            ₹ {money.format(o.pnl)}
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">{o.status}</td>
-                          <td className="px-3 py-2 text-slate-700">{o.time || "-"}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
+            <section className="space-y-3">
+              {filteredOrders.map((o) => (
+                <div
+                  key={o.id}
+                  className="rounded-2xl bg-white p-4 shadow-sm"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`font-semibold ${
+                          o.side === "BUY" ? "text-emerald-600" : "text-rose-600"
+                        }`}
+                      >
+                        {o.side}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {orderSegments.find((s) => s.key === o.segmentKey)?.label || o.segmentKey}
+                      </span>
+                    </div>
+                    <span className="text-sm font-semibold">
+                      {money.format(o.ltp)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">
+                    {o.market || "NSE"} {o.symbol}
+                  </p>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span>Qty: {o.qty}</span>
+                    <span>Avg: {money.format(o.avgPrice)}</span>
+                    <span>
+                      P/L:{" "}
+                      <span
+                        className={
+                          o.pnl >= 0 ? "text-emerald-600" : "text-rose-600"
+                        }
+                      >
+                        {money.format(o.pnl)}
+                      </span>
+                    </span>
+                  </div>
+                  {o.time && (
+                    <div className="mt-1 text-[10px] text-slate-400">
+                      {o.time}
+                    </div>
+                  )}
+                </div>
+              ))}
               {filteredOrders.length === 0 && (
                 <p className="mt-2 text-xs text-slate-500">
                   No entries available for this segment.

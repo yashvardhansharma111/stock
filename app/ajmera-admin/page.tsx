@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 
 type UserStatus = "pending" | "active";
@@ -120,7 +120,40 @@ export default function AdminPage() {
     totalPnl: 0,
   });
   const [ordersRows, setOrdersRows] = useState<OrderRow[]>([]);
+
+  const money = useMemo(() => {
+    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+  }, []);
+
+  function computePnl(row: OrderRow) {
+    const qty = Number(row.qty || 0);
+    const avg = Number(row.avgPrice || 0);
+    const ltp = Number(row.ltp || 0);
+    if (row.side === "BUY") {
+      return (ltp - avg) * qty;
+    }
+    // SELL
+    return (avg - ltp) * qty;
+  }
   const [orderSegments, setOrderSegments] = useState<OrderSegment[]>([]);
+  const [marketOptions, setMarketOptions] = useState<string[]>([
+    "NSE",
+    "BSE",
+    "NSEFO",
+    "NIFTY",
+    "SENSEX",
+    "NIFTY 50",
+    "BANKNIFTY",
+    "NIFTY IT",
+    "NIFTY MIDCAP",
+    "NIFTY SMALLCAP",
+    "NIFTY FMCG",
+    "NIFTY PHARMA",
+    "NIFTY AUTO",
+    "NIFTY REALTY",
+  ]);
+  const [marketFilter, setMarketFilter] = useState<string>("All");
+  const [newMarket, setNewMarket] = useState("");
   const [savingDashboardConfig, setSavingDashboardConfig] = useState(false);
   const [configScopeUserId, setConfigScopeUserId] = useState("");
   const [configSources, setConfigSources] = useState({
@@ -179,6 +212,21 @@ export default function AdminPage() {
             totalPnl: Number(summary.totalPnl ?? 0),
           });
           const segments = (cfg.segments ?? []) as OrderSegment[];
+          const rows = (cfg.orders ?? []) as OrderRow[];
+          // update market options based on rows
+          const derivedMarkets = Array.from(
+            new Set(rows.map((r) => r.market || "NSE")),
+          );
+          setMarketOptions((prev) => Array.from(new Set([...prev, ...derivedMarkets])));
+          setOrdersRows(
+            Array.isArray(rows)
+              ? rows.map((row) => ({
+                  ...row,
+                  segmentKey: row.segmentKey || "positions",
+                  market: row.market || "NSE",
+                }))
+              : [],
+          );
           setOrderSegments(
             Array.isArray(segments) && segments.length > 0
               ? segments
@@ -189,16 +237,6 @@ export default function AdminPage() {
                   { key: "stockSip", label: "Stock SIP" },
                   { key: "gtt", label: "GTT" },
                 ],
-          );
-          const rows = (cfg.orders ?? []) as OrderRow[];
-          setOrdersRows(
-            Array.isArray(rows)
-              ? rows.map((row) => ({
-                  ...row,
-                  segmentKey: row.segmentKey || "positions",
-                  market: row.market || "NSE",
-                }))
-              : [],
           );
           setConfigSources((prev) => ({
             ...prev,
@@ -317,9 +355,13 @@ export default function AdminPage() {
             ? rows.map((row) => ({
                 ...row,
                 segmentKey: row.segmentKey || "positions",
+                market: row.market || "NSE",
               }))
             : [],
         );
+        // extend market options list with any markets seen in the config
+        const derivedMarkets = Array.from(new Set(rows.map((r) => r.market || "NSE")));
+        setMarketOptions((prev) => Array.from(new Set([...prev, ...derivedMarkets])));
         setConfigSources((prev) => ({
           ...prev,
           orders: String(ordersData.source || "default"),
@@ -349,7 +391,10 @@ export default function AdminPage() {
       };
 
       const ordersConfig: Record<string, unknown> = {
-        summary: ordersSummary,
+        summary: {
+          dayPnl: ordersRows.reduce((a, o) => a + computePnl(o), 0),
+          totalPnl: ordersRows.reduce((a, o) => a + computePnl(o), 0),
+        },
         segments: orderSegments,
         orders: ordersRows,
       };
@@ -1116,6 +1161,43 @@ export default function AdminPage() {
                       </option>
                     ))}
                   </select>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-slate-300">Market:</span>
+                    <select
+                      value={marketFilter}
+                      onChange={(e) => setMarketFilter(e.target.value)}
+                      className="ml-1 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                    >
+                    <option value="All">All markets</option>
+                    {marketOptions.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  </div>
+                  <div className="ml-2 flex items-center gap-1">
+                    <input
+                      value={newMarket}
+                      onChange={(e) => setNewMarket(e.target.value)}
+                      placeholder="Add market"
+                      className="w-24 rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (newMarket.trim()) {
+                          setMarketOptions((prev) =>
+                            Array.from(new Set([...prev, newMarket.trim()])),
+                          );
+                          setNewMarket("");
+                        }
+                      }}
+                      className="rounded-full bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
+                    >
+                      Add
+                    </button>
+                  </div>
                   <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] text-slate-300">
                     home: {configSources.home}
                   </span>
@@ -1488,28 +1570,16 @@ export default function AdminPage() {
                   Orders - Summary
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  <input
-                    value={String(ordersSummary.dayPnl)}
-                    onChange={(e) =>
-                      setOrdersSummary((prev) => ({
-                        ...prev,
-                        dayPnl: Number(e.target.value || 0),
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                    placeholder="Day P/L"
-                  />
-                  <input
-                    value={String(ordersSummary.totalPnl)}
-                    onChange={(e) =>
-                      setOrdersSummary((prev) => ({
-                        ...prev,
-                        totalPnl: Number(e.target.value || 0),
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                    placeholder="Total P/L"
-                  />
+                  <div className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100">
+                    {money.format(
+                      ordersRows.reduce((a, o) => a + computePnl(o), 0),
+                    )}
+                  </div>
+                  <div className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100">
+                    {money.format(
+                      ordersRows.reduce((a, o) => a + computePnl(o), 0),
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-2 border-t border-slate-800 pt-3">
@@ -1588,22 +1658,27 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      setOrdersRows((prev) => [
-                        ...prev,
-                        {
+                      setOrdersRows((prev) => {
+                        const defaultMarket =
+                          marketFilter && marketFilter !== "All"
+                            ? marketFilter
+                            : marketOptions[0] || "NSE";
+                        const base = {
                           id: String(Date.now()),
                           segmentKey: orderSegments[0]?.key || "positions",
-                          market: "NSE",
+                          market: defaultMarket,
                           symbol: "",
-                          side: "BUY",
+                          side: "BUY" as OrderRow["side"],
                           qty: 0,
                           avgPrice: 0,
                           ltp: 0,
                           pnl: 0,
-                          status: "OPEN",
+                          status: "OPEN" as OrderRow["status"],
                           time: "",
-                        },
-                      ])
+                        };
+                        base.pnl = computePnl(base);
+                        return [...prev, base];
+                      })
                     }
                     className="rounded-full bg-slate-800 px-3 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
                   >
@@ -1612,7 +1687,9 @@ export default function AdminPage() {
                 </div>
 
                 <div className="space-y-2">
-                  {ordersRows.map((row, idx) => (
+                  {ordersRows
+                    .filter((r) => marketFilter === "All" || r.market === marketFilter)
+                    .map((row, idx) => (
                     <div
                       key={row.id}
                       className="rounded-xl border border-slate-800 bg-slate-950 p-2"
@@ -1652,8 +1729,10 @@ export default function AdminPage() {
                           {[
                             "NSE",
                             "BSE",
-                            "NIFTY 50",
+                            "NSEFO",
+                            "NIFTY",
                             "SENSEX",
+                            "NIFTY 50",
                             "BANKNIFTY",
                             "NIFTY IT",
                             "NIFTY MIDCAP",
@@ -1682,11 +1761,15 @@ export default function AdminPage() {
                           value={row.side}
                           onChange={(e) =>
                             setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx
-                                  ? { ...r, side: e.target.value as OrderRow["side"] }
-                                  : r,
-                              ),
+                              prev.map((r, i) => {
+                                if (i !== idx) return r;
+                                const updated = {
+                                  ...r,
+                                  side: e.target.value as OrderRow["side"],
+                                };
+                                updated.pnl = computePnl(updated);
+                                return updated;
+                              }),
                             )
                           }
                           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
@@ -1698,9 +1781,12 @@ export default function AdminPage() {
                           value={String(row.qty)}
                           onChange={(e) =>
                             setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx ? { ...r, qty: Number(e.target.value || 0) } : r,
-                              ),
+                              prev.map((r, i) => {
+                                if (i !== idx) return r;
+                                const updated = { ...r, qty: Number(e.target.value || 0) };
+                                updated.pnl = computePnl(updated);
+                                return updated;
+                              }),
                             )
                           }
                           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
@@ -1710,11 +1796,15 @@ export default function AdminPage() {
                           value={String(row.avgPrice)}
                           onChange={(e) =>
                             setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx
-                                  ? { ...r, avgPrice: Number(e.target.value || 0) }
-                                  : r,
-                              ),
+                              prev.map((r, i) => {
+                                if (i !== idx) return r;
+                                const updated = {
+                                  ...r,
+                                  avgPrice: Number(e.target.value || 0),
+                                };
+                                updated.pnl = computePnl(updated);
+                                return updated;
+                              }),
                             )
                           }
                           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
@@ -1724,26 +1814,20 @@ export default function AdminPage() {
                           value={String(row.ltp)}
                           onChange={(e) =>
                             setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx ? { ...r, ltp: Number(e.target.value || 0) } : r,
-                              ),
+                              prev.map((r, i) => {
+                                if (i !== idx) return r;
+                                const updated = { ...r, ltp: Number(e.target.value || 0) };
+                                updated.pnl = computePnl(updated);
+                                return updated;
+                              }),
                             )
                           }
                           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
                           placeholder="LTP"
                         />
-                        <input
-                          value={String(row.pnl)}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx ? { ...r, pnl: Number(e.target.value || 0) } : r,
-                              ),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                          placeholder="P/L"
-                        />
+                        <div className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100">
+                          {money.format(row.pnl)}
+                        </div>
                         <select
                           value={row.status}
                           onChange={(e) =>

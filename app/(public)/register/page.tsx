@@ -298,11 +298,10 @@ export default function RegisterPage() {
 
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-800">
-                  Bank Proof
+                  Bank Proof (optional)
                 </label>
                 <input
                   type="file"
-                  required
                   onChange={(e) =>
                     setBankProofFile(e.target.files ? e.target.files[0] : null)
                   }
