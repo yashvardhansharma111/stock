@@ -270,34 +270,6 @@ export default function AdminPage() {
   }, []);
 
   // Manual save only - removed auto-save
-
-  async function handleBlockUnblockUser(userId: string, shouldBlock: boolean) {
-    setActionMessage(null);
-    setAuthError(null);
-    try {
-      const res = await fetch("/api/admin/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          status: shouldBlock ? "blocked" : "active",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to update user status");
-      }
-      setActionMessage(
-        shouldBlock
-          ? "User has been blocked successfully."
-          : "User has been unblocked successfully.",
-      );
-      await fetchUsers();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
-      setAuthError(msg);
-    }
-  }
   async function handleSetBalanceMargin(userId: string) {
     setActionMessage(null);
     setAuthError(null);
