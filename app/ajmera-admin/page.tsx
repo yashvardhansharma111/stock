@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 
-type UserStatus = "pending" | "active";
+type UserStatus = "pending" | "active" | "blocked";
 
 interface User {
   _id: string;
@@ -64,7 +64,18 @@ type OrderRow = {
   market?: string; // NSE, BSE etc.
   symbol: string;
   side: "BUY" | "SELL";
+  productType?: string;
+  optionType?: string;
+  strikePrice?: number;
+  exchange?: string;
+  orderTag?: string;
+  changePct?: number;
+  filledLots?: number;
+  totalLots?: number;
+  orderPrice?: number;
   qty: number;
+  lotSize?: number;
+  startDate?: string;
   avgPrice: number;
   ltp: number;
   pnl: number;
@@ -126,7 +137,9 @@ export default function AdminPage() {
   }, []);
 
   function computePnl(row: OrderRow) {
-    const qty = Number(row.qty || 0);
+    const lots = Number(row.qty || 0);
+    const lotSize = Number(row.lotSize || 1);
+    const qty = lots * lotSize;
     const avg = Number(row.avgPrice || 0);
     const ltp = Number(row.ltp || 0);
     if (row.side === "BUY") {
@@ -224,6 +237,10 @@ export default function AdminPage() {
                   ...row,
                   segmentKey: row.segmentKey || "positions",
                   market: row.market || "NSE",
+                  productType: row.productType || "Delivery",
+                  optionType: row.optionType || "CE",
+                  exchange: row.exchange || row.market || "NSEFO",
+                  orderTag: row.orderTag || "Amo Submitted",
                 }))
               : [],
           );
@@ -252,6 +269,35 @@ export default function AdminPage() {
     void initFromStorage();
   }, []);
 
+  // Manual save only - removed auto-save
+
+  async function handleBlockUnblockUser(userId: string, shouldBlock: boolean) {
+    setActionMessage(null);
+    setAuthError(null);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          status: shouldBlock ? "blocked" : "active",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to update user status");
+      }
+      setActionMessage(
+        shouldBlock
+          ? "User has been blocked successfully."
+          : "User has been unblocked successfully.",
+      );
+      await fetchUsers();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setAuthError(msg);
+    }
+  }
   async function handleSetBalanceMargin(userId: string) {
     setActionMessage(null);
     setAuthError(null);
@@ -292,7 +338,7 @@ export default function AdminPage() {
       setAuthError(msg);
     }
   }
-
+  
   async function fetchDashboardConfigs(scopeOverride?: string) {
     try {
       const resolvedScope = scopeOverride ?? configScopeUserId;
@@ -356,6 +402,10 @@ export default function AdminPage() {
                 ...row,
                 segmentKey: row.segmentKey || "positions",
                 market: row.market || "NSE",
+                productType: row.productType || "Delivery",
+                optionType: row.optionType || "CE",
+                exchange: row.exchange || row.market || "NSEFO",
+                orderTag: row.orderTag || "Amo Submitted",
               }))
             : [],
         );
@@ -551,6 +601,34 @@ export default function AdminPage() {
         `Password for ${data.email}: ${data.plainPassword}. Share this securely with the user.`,
       );
       setPasswordDrafts((prev) => ({ ...prev, [userId]: "" }));
+      await fetchUsers();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setAuthError(msg);
+    }
+  }
+
+  async function handleBlockUnblockUser(userId: string, shouldBlock: boolean) {
+    setActionMessage(null);
+    setAuthError(null);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          status: shouldBlock ? "blocked" : "active",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to update user status");
+      }
+      setActionMessage(
+        shouldBlock
+          ? "User has been blocked successfully."
+          : "User has been unblocked successfully.",
+      );
       await fetchUsers();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
@@ -757,6 +835,7 @@ export default function AdminPage() {
 
   const pendingUsers = users.filter((u) => u.status === "pending");
   const activeUsers = users.filter((u) => u.status === "active");
+  const blockedUsers = users.filter((u) => u.status === "blocked");
 
   return (
     <div className="min-h-screen bg-slate-950 px-4 py-6 text-slate-50">
@@ -788,6 +867,129 @@ export default function AdminPage() {
             {actionMessage}
           </p>
         )}
+
+        {/* Tables Section */}
+        <section className="mt-4 space-y-4">
+          {/* Users Table */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 overflow-x-auto">
+            <h2 className="text-sm font-semibold text-slate-100 mb-3">All Users</h2>
+            <table className="w-full text-[11px] text-slate-300">
+              <thead>
+                <tr className="border-b border-slate-700">
+                  <th className="text-left px-3 py-2 font-semibold text-slate-200">Name</th>
+                  <th className="text-left px-3 py-2 font-semibold text-slate-200">Email</th>
+                  <th className="text-left px-3 py-2 font-semibold text-slate-200">Status</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-200">
+                    Trading Balance
+                  </th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-200">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-3 text-center text-slate-500">
+                      No users found.
+                    </td>
+                  </tr>
+                ) : (
+                  users.map((user) => (
+                    <tr key={user._id} className="border-b border-slate-800 hover:bg-slate-800/50 transition">
+                      <td className="px-3 py-3 text-slate-50 font-medium">{user.fullName}</td>
+                      <td className="px-3 py-3 text-slate-400">{user.email}</td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={`px-2 py-1 rounded-full text-[10px] font-semibold ${
+                            user.status === "pending"
+                              ? "bg-yellow-900 text-yellow-300"
+                              : user.status === "active"
+                              ? "bg-emerald-900 text-emerald-300"
+                              : "bg-red-900 text-red-300"
+                          }`}
+                        >
+                          {user.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-right text-slate-200">
+                        ₹ {(user.tradingBalance ?? 0).toLocaleString("en-IN")}
+                      </td>
+                      <td className="px-3 py-3 text-right text-slate-200">
+                        ₹ {(user.margin ?? 0).toLocaleString("en-IN")}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Orders Table */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 overflow-x-auto">
+            <h2 className="text-sm font-semibold text-slate-100 mb-3">All Orders</h2>
+            <table className="w-full text-[11px] text-slate-300">
+              <thead>
+                <tr className="border-b border-slate-700">
+                  <th className="text-left px-3 py-2 font-semibold text-slate-200">Symbol</th>
+                  <th className="text-center px-3 py-2 font-semibold text-slate-200">Side</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-200">
+                    Buy Price
+                  </th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-200">
+                    Sell Price
+                  </th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-200">Lots</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-200">
+                    Profit/Loss
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {ordersRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-3 text-center text-slate-500">
+                      No orders found.
+                    </td>
+                  </tr>
+                ) : (
+                  ordersRows.map((order) => (
+                    <tr key={order.id} className="border-b border-slate-800 hover:bg-slate-800/50 transition">
+                      <td className="px-3 py-3 text-slate-50 font-medium">{order.symbol || "-"}</td>
+                      <td className="px-3 py-3 text-center">
+                        <span
+                          className={`px-2 py-1 rounded-full text-[10px] font-semibold ${
+                            order.side === "BUY"
+                              ? "bg-sky-900 text-sky-300"
+                              : "bg-rose-900 text-rose-300"
+                          }`}
+                        >
+                          {order.side}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-right text-slate-200">
+                        ₹{order.avgPrice.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-slate-200">
+                        ₹{order.ltp.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-slate-200">{order.qty}</td>
+                      <td className="px-3 py-3 text-right">
+                        <span
+                          className={`font-semibold ${
+                            computePnl(order) >= 0
+                              ? "text-emerald-400"
+                              : "text-red-400"
+                          }`}
+                        >
+                          {money.format(computePnl(order))}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <main className="mt-2 grid gap-4 md:grid-cols-3">
           <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 md:col-span-1">
@@ -939,6 +1141,92 @@ export default function AdminPage() {
                         Change
                       </button>
                     </div>
+
+                    <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+                      <p className="text-[11px] font-semibold text-slate-200">
+                        Trading Balance / Margin
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Current: ₹ {(user.tradingBalance ?? 0).toLocaleString("en-IN")} · Margin {(user.margin ?? 0).toLocaleString("en-IN")}
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={balanceDrafts[user._id] || ""}
+                          onChange={(e) =>
+                            setBalanceDrafts((prev) => ({
+                              ...prev,
+                              [user._id]: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] text-slate-50 outline-none focus:border-sky-400"
+                          placeholder="Set trading balance"
+                        />
+                        <input
+                          type="text"
+                          value={marginDrafts[user._id] || ""}
+                          onChange={(e) =>
+                            setMarginDrafts((prev) => ({
+                              ...prev,
+                              [user._id]: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] text-slate-50 outline-none focus:border-sky-400"
+                          placeholder="Set margin"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleSetBalanceMargin(user._id)}
+                        className="mt-2 w-full rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-emerald-600"
+                      >
+                        Update Balance / Margin
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleBlockUnblockUser(user._id, true)}
+                      className="mt-2 w-full rounded-full bg-rose-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-rose-600"
+                    >
+                      Block User
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 md:col-span-1">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-100">
+                Blocked Users
+              </h2>
+            </div>
+            {blockedUsers.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                No blocked users at the moment.
+              </p>
+            ) : (
+              <ul className="space-y-3 text-xs">
+                {blockedUsers.map((user) => (
+                  <li
+                    key={user._id}
+                    className="rounded-xl border border-red-900 bg-red-950 px-3 py-2.5"
+                  >
+                    <p className="text-sm font-semibold text-slate-50">
+                      {user.fullName}
+                    </p>
+                    <p className="text-[11px] text-slate-400">{user.email}</p>
+                    <p className="text-[11px] text-rose-400">
+                      BLOCKED · Cannot login
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleBlockUnblockUser(user._id, false)}
+                      className="mt-2 w-full rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-emerald-600"
+                    >
+                      Unblock User
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -1569,7 +1857,25 @@ export default function AdminPage() {
                 <p className="text-[11px] font-semibold text-slate-200">
                   Orders - Summary
                 </p>
-                <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-2">
+                    Select User
+                  </label>
+                  <select
+                    value={configScopeUserId}
+                    onChange={(e) => setConfigScopeUserId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                  >
+                    <option value="">Global (All Users)</option>
+                    {users.map((u) => (
+                      <option key={u._id} value={u._id}>
+                        {u.fullName} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
                   <div className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100">
                     {money.format(
                       ordersRows.reduce((a, o) => a + computePnl(o), 0),
@@ -1582,301 +1888,366 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div className="mt-2 border-t border-slate-800 pt-3">
-                  <div className="flex items-center justify-between">
+                <div className="mt-4 border-t border-slate-800 pt-3">
+                  <div className="flex items-center justify-between mb-3">
                     <p className="text-[11px] font-semibold text-slate-200">
-                      Orders - Segments
+                      Orders
                     </p>
                     <button
                       type="button"
                       onClick={() =>
-                        setOrderSegments((prev) => [
-                          ...prev,
-                          { key: `seg_${Date.now()}`, label: "New Segment" },
-                        ])
-                      }
-                      className="rounded-full bg-slate-800 px-3 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
-                    >
-                      Add
-                    </button>
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    {orderSegments.map((segment, idx) => (
-                      <div
-                        key={`${segment.key}-${idx}`}
-                        className="rounded-xl border border-slate-800 bg-slate-950 p-2"
-                      >
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            value={segment.key}
-                            onChange={(e) =>
-                              setOrderSegments((prev) =>
-                                prev.map((r, i) =>
-                                  i === idx ? { ...r, key: e.target.value } : r,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                            placeholder="segment key"
-                          />
-                          <input
-                            value={segment.label}
-                            onChange={(e) =>
-                              setOrderSegments((prev) =>
-                                prev.map((r, i) =>
-                                  i === idx ? { ...r, label: e.target.value } : r,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                            placeholder="segment label"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setOrderSegments((prev) => prev.filter((_, i) => i !== idx))
-                          }
-                          className="mt-2 w-full rounded-full bg-rose-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-rose-600"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                    {orderSegments.length === 0 && (
-                      <p className="text-[11px] text-slate-500">
-                        No order segments yet.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-2 flex items-center justify-between">
-                  <p className="text-[11px] font-semibold text-slate-200">
-                    Orders - Rows
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOrdersRows((prev) => {
-                        const defaultMarket =
-                          marketFilter && marketFilter !== "All"
-                            ? marketFilter
-                            : marketOptions[0] || "NSE";
-                        const base = {
-                          id: String(Date.now()),
-                          segmentKey: orderSegments[0]?.key || "positions",
-                          market: defaultMarket,
-                          symbol: "",
-                          side: "BUY" as OrderRow["side"],
-                          qty: 0,
-                          avgPrice: 0,
-                          ltp: 0,
-                          pnl: 0,
-                          status: "OPEN" as OrderRow["status"],
-                          time: "",
-                        };
+                        setOrdersRows((prev) => {
+                          const base = {
+                            id: String(Date.now()),
+                            symbol: "",
+                            market: "NSE",
+                            productType: "Delivery",
+                            optionType: "CE",
+                            strikePrice: 0,
+                            exchange: "NSEFO",
+                            orderTag: "Amo Submitted",
+                            changePct: 0,
+                            filledLots: 0,
+                            totalLots: 1,
+                            orderPrice: 0,
+                            avgPrice: 0,
+                            ltp: 0,
+                            qty: 0,
+                            side: "BUY" as OrderRow["side"],
+                            lotSize: 1,
+                            pnl: 0,
+                            segmentKey: "positions",
+                            status: "OPEN" as OrderRow["status"],
+                          };
                         base.pnl = computePnl(base);
                         return [...prev, base];
                       })
                     }
-                    className="rounded-full bg-slate-800 px-3 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
+                    className="rounded-full bg-sky-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-sky-700"
                   >
-                    Add
+                    Add Order
                   </button>
                 </div>
 
-                <div className="space-y-2">
-                  {ordersRows
-                    .filter((r) => marketFilter === "All" || r.market === marketFilter)
-                    .map((row, idx) => (
-                    <div
-                      key={row.id}
-                      className="rounded-xl border border-slate-800 bg-slate-950 p-2"
-                    >
-                      <div className="grid grid-cols-3 gap-2">
-                        <select
-                          value={row.segmentKey}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx ? { ...r, segmentKey: e.target.value } : r,
-                              ),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                        >
-                          {orderSegments.map((segment) => (
-                            <option key={segment.key} value={segment.key}>
-                              {segment.label}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          list="marketOptions"
-                          value={row.market || "NSE"}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx ? { ...r, market: e.target.value } : r,
-                              ),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                          placeholder="Market or Index"
-                        />
-                        <datalist id="marketOptions">
-                          {[
-                            "NSE",
-                            "BSE",
-                            "NSEFO",
-                            "NIFTY",
-                            "SENSEX",
-                            "NIFTY 50",
-                            "BANKNIFTY",
-                            "NIFTY IT",
-                            "NIFTY MIDCAP",
-                            "NIFTY SMALLCAP",
-                            "NIFTY FMCG",
-                            "NIFTY PHARMA",
-                            "NIFTY AUTO",
-                            "NIFTY REALTY",
-                          ].map((m) => (
-                            <option key={m} value={m} />
-                          ))}
-                        </datalist>
-                        <input
-                          value={row.symbol}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx ? { ...r, symbol: e.target.value } : r,
-                              ),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                          placeholder="Symbol"
-                        />
-                        <select
-                          value={row.side}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) => {
-                                if (i !== idx) return r;
-                                const updated = {
-                                  ...r,
-                                  side: e.target.value as OrderRow["side"],
-                                };
-                                updated.pnl = computePnl(updated);
-                                return updated;
-                              }),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                        >
-                          <option value="BUY">BUY</option>
-                          <option value="SELL">SELL</option>
-                        </select>
-                        <input
-                          value={String(row.qty)}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) => {
-                                if (i !== idx) return r;
-                                const updated = { ...r, qty: Number(e.target.value || 0) };
-                                updated.pnl = computePnl(updated);
-                                return updated;
-                              }),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                          placeholder="Qty"
-                        />
-                        <input
-                          value={String(row.avgPrice)}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) => {
-                                if (i !== idx) return r;
-                                const updated = {
-                                  ...r,
-                                  avgPrice: Number(e.target.value || 0),
-                                };
-                                updated.pnl = computePnl(updated);
-                                return updated;
-                              }),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                          placeholder="Avg Price"
-                        />
-                        <input
-                          value={String(row.ltp)}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) => {
-                                if (i !== idx) return r;
-                                const updated = { ...r, ltp: Number(e.target.value || 0) };
-                                updated.pnl = computePnl(updated);
-                                return updated;
-                              }),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                          placeholder="LTP"
-                        />
-                        <div className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100">
-                          {money.format(row.pnl)}
-                        </div>
-                        <select
-                          value={row.status}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx
-                                  ? {
-                                      ...r,
-                                      status: e.target.value as OrderRow["status"],
-                                    }
-                                  : r,
-                              ),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                        >
-                          <option value="OPEN">OPEN</option>
-                          <option value="CLOSED">CLOSED</option>
-                        </select>
-                        <input
-                          value={row.time || ""}
-                          onChange={(e) =>
-                            setOrdersRows((prev) =>
-                              prev.map((r, i) =>
-                                i === idx ? { ...r, time: e.target.value } : r,
-                              ),
-                            )
-                          }
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
-                          placeholder="Time"
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOrdersRows((prev) => prev.filter((_, i) => i !== idx))
-                        }
-                        className="mt-2 w-full rounded-full bg-rose-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-rose-600"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                  {ordersRows.length === 0 && (
-                    <p className="text-[11px] text-slate-500">No orders yet.</p>
-                  )}
+                <div className="overflow-x-auto border border-slate-700 rounded-lg">
+                  <table className="w-full text-[11px] text-slate-300">
+                    <thead>
+                      <tr className="border-b border-slate-700 bg-slate-950">
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Segment</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Market</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Symbol</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Side</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Product</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Option</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Strike</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Exchange</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-200">Order Tag</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Buy Price</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Sell Price</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Change %</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Filled</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Total Lots</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Order Price</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Lots</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">Profit/Loss</th>
+                        <th className="px-3 py-2 text-center font-semibold text-slate-200">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ordersRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={18} className="px-3 py-3 text-center text-slate-500">
+                            No orders. Click &quot;Add Order&quot; to create one.
+                          </td>
+                        </tr>
+                      ) : (
+                        ordersRows.map((row, idx) => (
+                          <tr key={`${row.id}-${idx}`} className="border-b border-slate-800 hover:bg-slate-900/50 transition">
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.segmentKey || "positions"}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, segmentKey: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-28 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                              >
+                                {orderSegments.map((seg) => (
+                                  <option key={seg.key} value={seg.key}>
+                                    {seg.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                value={row.market || "NSE"}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, market: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                                placeholder="NSE"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                value={row.symbol}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, symbol: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                                placeholder="SYM"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.side}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx
+                                        ? { ...r, side: e.target.value as OrderRow["side"] }
+                                        : r,
+                                    ),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                              >
+                                <option value="BUY">BUY</option>
+                                <option value="SELL">SELL</option>
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                value={row.productType || "Delivery"}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, productType: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-24 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                                placeholder="Delivery"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.optionType || "CE"}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, optionType: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                              >
+                                <option value="CE">CE</option>
+                                <option value="PE">PE</option>
+                              </select>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.strikePrice ?? 0)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, strikePrice: Number(e.target.value || 0) } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-24 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="24850"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                value={row.exchange || "NSEFO"}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, exchange: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-24 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                                placeholder="NSEFO"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                value={row.orderTag || "Amo Submitted"}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, orderTag: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-28 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-sky-400"
+                                placeholder="Amo Submitted"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.ltp)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) => {
+                                      if (i !== idx) return r;
+                                      const updated = {
+                                        ...r,
+                                        ltp: Number(e.target.value || 0),
+                                      };
+                                      updated.pnl = computePnl(updated);
+                                      return updated;
+                                    }),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.changePct ?? 0)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, changePct: Number(e.target.value || 0) } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.filledLots ?? 0)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, filledLots: Number(e.target.value || 0) } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.totalLots ?? row.qty ?? 0)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, totalLots: Number(e.target.value || 0) } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.orderPrice ?? row.avgPrice)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, orderPrice: Number(e.target.value || 0) } : r,
+                                    ),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.avgPrice)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) => {
+                                      if (i !== idx) return r;
+                                      const updated = {
+                                        ...r,
+                                        avgPrice: Number(e.target.value || 0),
+                                      };
+                                      updated.pnl = computePnl(updated);
+                                      return updated;
+                                    }),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.qty)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) => {
+                                      if (i !== idx) return r;
+                                      const updated = { ...r, qty: Number(e.target.value || 0) };
+                                      updated.pnl = computePnl(updated);
+                                      return updated;
+                                    }),
+                                  )
+                                }
+                                className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className={`px-3 py-2 text-right font-semibold ${
+                              computePnl(row) >= 0
+                                ? "text-emerald-400"
+                                : "text-red-400"
+                            }`}>
+                              {money.format(computePnl(row))}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOrdersRows((prev) => prev.filter((_, i) => i !== idx))
+                                }
+                                className="rounded bg-rose-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-700 transition"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => void saveDashboardConfigs()}
+                  disabled={savingDashboardConfig}
+                  className="mt-3 w-full rounded-full bg-emerald-600 px-4 py-2 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 transition"
+                >
+                  {savingDashboardConfig ? "Submitting Orders..." : "Submit Orders"}
+                </button>
               </div>
+            </div>
             </div>
           </section>
         </main>

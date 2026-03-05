@@ -12,6 +12,8 @@ import {
   FaSignOutAlt,
   FaCog,
   FaRegEdit,
+  FaSearch,
+  FaFilter,
 } from "react-icons/fa";
 import { HiReceiptPercent } from "react-icons/hi2";
 import { MdAccountBalanceWallet, MdOutlineManageAccounts } from "react-icons/md";
@@ -27,6 +29,7 @@ type DashboardUser = {
   aadhaarNumber?: string;
   tradingBalance: number;
   margin: number;
+  status?: "pending" | "active" | "blocked";
 };
 
 type FundRequestResponse = {
@@ -59,7 +62,20 @@ type OrderRow = {
   market?: string;
   symbol: string;
   side: "BUY" | "SELL";
+  productType?: string;
+  optionType?: string;
+  strikePrice?: number;
+  exchange?: string;
+  orderTag?: string;
+  changePct?: number;
+  filledLots?: number;
+  totalLots?: number;
+  orderPrice?: number;
   qty: number;
+  // number of shares per lot, used for calculating actual quantity
+  lotSize?: number;
+  // when the order/lot was started (ISO date string)
+  startDate?: string;
   avgPrice: number;
   ltp: number;
   pnl: number;
@@ -116,6 +132,7 @@ export default function DashboardPage() {
     "ipo" | "mutual" | "etf" | "sgb"
   >("ipo");
   const [chartTick, setChartTick] = useState(0);
+  const [selectedIndianSymbol, setSelectedIndianSymbol] = useState("NIFTY50");
   const [selectedGlobalSymbol, setSelectedGlobalSymbol] = useState("AAPL");
   const [selectedCryptoSymbol, setSelectedCryptoSymbol] = useState("BTCUSD");
   const [activeOrderTool, setActiveOrderTool] = useState("positions");
@@ -161,6 +178,7 @@ export default function DashboardPage() {
           aadhaarNumber: meData.user.aadhaarNumber,
           tradingBalance: meData.user.tradingBalance ?? 0,
           margin: meData.user.margin ?? 0,
+          status: meData.user.status || "active",
         });
         setUserPhotoUrl(`/api/auth/photo?t=${Date.now()}`);
         setUserPhotoFailed(false);
@@ -176,6 +194,7 @@ export default function DashboardPage() {
         const qrData = await qrRes.json();
         const homeData = await homeRes.json();
         const ordersData = await ordersRes.json();
+        console.log("[orders] initial /api/config/orders response", ordersData);
 
         setQrUrl(qrData.qrUrl || null);
         setPaymentMeta(qrData.paymentMeta || null);
@@ -201,10 +220,16 @@ export default function DashboardPage() {
                   ? incomingOrders.orders.map((row: OrderRow) => ({
                       ...row,
                       segmentKey: row.segmentKey || "positions",
+                      market: row.market || "NSE",
                     }))
                   : [],
               }
             : null,
+        );
+        console.log(
+          "[orders] initial mapped",
+          incomingOrders?.orders?.length || 0,
+          "rows",
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
@@ -247,6 +272,59 @@ export default function DashboardPage() {
     }
   }, [ordersConfig]);
 
+  // subscribe to server-sent events for orders updates when orders tab active
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeTab !== "orders") return;
+
+    const es = new EventSource("/api/events/orders");
+    es.onmessage = (ev) => {
+      try {
+        const payload = JSON.parse(ev.data || "{}");
+        console.log("[orders] sse payload", payload);
+        const incomingOrders = payload.config || null;
+        setOrdersConfig(
+          incomingOrders
+            ? {
+                ...incomingOrders,
+                segments:
+                  Array.isArray(incomingOrders.segments) &&
+                  incomingOrders.segments.length > 0
+                    ? incomingOrders.segments
+                    : [
+                        { key: "positions", label: "Positions" },
+                        { key: "openOrders", label: "Open Orders" },
+                        { key: "baskets", label: "Baskets" },
+                        { key: "stockSip", label: "Stock SIP" },
+                        { key: "gtt", label: "GTT" },
+                      ],
+                orders: Array.isArray(incomingOrders.orders)
+                  ? incomingOrders.orders.map((row: OrderRow) => ({
+                      ...row,
+                      segmentKey: row.segmentKey || "positions",
+                      market: row.market || "NSE",
+                    }))
+                  : [],
+              }
+            : null,
+        );
+        console.log(
+          "[orders] sse mapped",
+          incomingOrders?.orders?.length || 0,
+          "rows",
+        );
+      } catch (err) {
+        // ignore parse errors
+      }
+    };
+    es.onerror = () => {
+      // on error, close and allow fallback (optional)
+      es.close();
+    };
+
+    return () => es.close();
+  }, [activeTab]);
+
   const money = useMemo(() => {
     return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
   }, []);
@@ -288,6 +366,48 @@ export default function DashboardPage() {
         yearlyChangePct: -11.48,
         chartBase: 212,
         chartWiggle: 85,
+      },
+    ],
+    [],
+  );
+
+  const indianMarkets = useMemo<MarketCard[]>(
+    () => [
+      {
+        symbol: "NIFTY50",
+        name: "NIFTY 50",
+        price: 22455.35,
+        yearlyChange: 2489.4,
+        yearlyChangePct: 12.47,
+        chartBase: 20120,
+        chartWiggle: 2600,
+      },
+      {
+        symbol: "BANKNIFTY",
+        name: "NIFTY BANK",
+        price: 48890.1,
+        yearlyChange: 3920.5,
+        yearlyChangePct: 8.72,
+        chartBase: 45800,
+        chartWiggle: 4200,
+      },
+      {
+        symbol: "SENSEX",
+        name: "SENSEX",
+        price: 73982.8,
+        yearlyChange: 6518.2,
+        yearlyChangePct: 9.66,
+        chartBase: 68800,
+        chartWiggle: 7200,
+      },
+      {
+        symbol: "NIFTYIT",
+        name: "NIFTY IT",
+        price: 36420.25,
+        yearlyChange: 4210.6,
+        yearlyChangePct: 13.07,
+        chartBase: 33100,
+        chartWiggle: 5400,
       },
     ],
     [],
@@ -338,6 +458,9 @@ export default function DashboardPage() {
   const selectedGlobalMarket =
     globalMarkets.find((item) => item.symbol === selectedGlobalSymbol) ||
     globalMarkets[0];
+  const selectedIndianMarket =
+    indianMarkets.find((item) => item.symbol === selectedIndianSymbol) ||
+    indianMarkets[0];
   const selectedCryptoMarket =
     cryptoMarkets.find((item) => item.symbol === selectedCryptoSymbol) ||
     cryptoMarkets[0];
@@ -390,17 +513,37 @@ export default function DashboardPage() {
   }, [availableMarkets]);
 
   const filteredOrders = useMemo(() => {
-    return (ordersConfig?.orders || [])
-      .filter(
-        (o) =>
-          (o.segmentKey || "positions") === activeOrderTool &&
-          (activeOrderMarket ? (o.market || "NSE") === activeOrderMarket : true),
-      )
-      .map((o) => ({
-        ...o,
-        pnl: o.pnl !== undefined ? o.pnl : computePnl(o),
-      }));
+    const all = ordersConfig?.orders || [];
+    const bySegmentAndMarket = all.filter(
+      (o) =>
+        (o.segmentKey || "positions") === activeOrderTool &&
+        (activeOrderMarket ? (o.market || "NSE") === activeOrderMarket : true),
+    );
+
+    // Fallback: if segment keys don't match admin/user config, still show rows by market.
+    const byMarketOnly = all.filter((o) =>
+      activeOrderMarket ? (o.market || "NSE") === activeOrderMarket : true,
+    );
+
+    const chosen = bySegmentAndMarket.length > 0 ? bySegmentAndMarket : byMarketOnly;
+    return chosen.map((o) => ({
+      ...o,
+      pnl: computePnl(o),
+    }));
   }, [ordersConfig, activeOrderTool, activeOrderMarket]);
+
+  useEffect(() => {
+    const total = ordersConfig?.orders?.length || 0;
+    console.log("[orders] filter debug", {
+      total,
+      activeOrderTool,
+      activeOrderMarket,
+      filtered: filteredOrders.length,
+      segments: (ordersConfig?.segments || []).map((s) => s.key),
+      rowSegments: (ordersConfig?.orders || []).map((o) => o.segmentKey || "positions"),
+      rowMarkets: (ordersConfig?.orders || []).map((o) => o.market || "NSE"),
+    });
+  }, [ordersConfig, activeOrderTool, activeOrderMarket, filteredOrders.length]);
   const reportDetailLines = useMemo(() => {
     if (!activeReport) return [] as string[];
     if (activeReport === "Trades and Charges") {
@@ -475,7 +618,10 @@ export default function DashboardPage() {
   }
 
   function computePnl(o: OrderRow) {
-    const qty = Number(o.qty || 0);
+    // we allow orders to specify a lotSize; if present qty is treated as number of lots
+    const lots = Number(o.qty || 0);
+    const lotSize = Number(o.lotSize || 1);
+    const qty = lots * lotSize;
     const avg = Number(o.avgPrice || 0);
     const ltp = Number(o.ltp || 0);
     if (o.side === "BUY") {
@@ -650,18 +796,186 @@ export default function DashboardPage() {
     );
   }
 
-  if (error || !user) {
+  if (user?.status === "pending") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4">
-        <p className="mb-3 text-sm text-rose-600">
-          {error || "Unable to load dashboard"}
-        </p>
-        <a
-          href="/login"
-          className="rounded-full bg-sky-500 px-4 py-2 text-xs font-semibold text-white"
-        >
-          Go to Login
-        </a>
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 flex flex-col">
+        <header className="bg-gradient-to-r from-sky-500 to-sky-600 px-4 py-4 text-white shadow-md">
+          <div className="mx-auto max-w-5xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <img
+                src="/logo.jpeg"
+                alt="Ajmeraexchange"
+                className="h-8 w-8 rounded-full bg-white object-cover"
+              />
+              <h1 className="text-lg font-semibold">Ajmeraexchange</h1>
+            </div>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center px-4 py-6">
+          <div className="w-full max-w-md rounded-3xl border-4 border-red-400 bg-gradient-to-br from-red-50 to-pink-50 p-8 shadow-lg text-center">
+            <div className="mb-6 flex justify-center">
+              <div className="rounded-full bg-red-500 p-4">
+                <svg className="h-12 w-12 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+            <h2 className="mb-2 text-2xl font-bold text-slate-900">
+              Hello {user.fullName}
+            </h2>
+            <p className="mb-4 text-base text-slate-600">
+              Your account is pending approval. Please contact your broker for more information. Thank you for your patience!
+            </p>
+            <div className="mb-6 text-3xl">😊</div>
+            <button
+              onClick={() => {
+                window.location.href = "mailto:support@ajmeraexchange.com";
+              }}
+              className="w-full rounded-full bg-gradient-to-r from-orange-400 to-orange-500 px-6 py-3 text-base font-semibold text-white hover:from-orange-500 hover:to-orange-600 shadow-md transition"
+            >
+              Contact Support
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (user?.status === "blocked") {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 flex flex-col">
+        <header className="bg-gradient-to-r from-sky-500 to-sky-600 px-4 py-4 text-white shadow-md">
+          <div className="mx-auto max-w-5xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <img
+                src="/logo.jpeg"
+                alt="Ajmeraexchange"
+                className="h-8 w-8 rounded-full bg-white object-cover"
+              />
+              <h1 className="text-lg font-semibold">Ajmeraexchange</h1>
+            </div>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center px-4 py-6">
+          <div className="w-full max-w-md rounded-3xl border-4 border-red-500 bg-gradient-to-br from-red-50 to-red-100 p-8 shadow-lg text-center">
+            <div className="mb-6 flex justify-center">
+              <div className="rounded-full bg-red-100 p-4 border border-red-300">
+                <svg className="h-14 w-14 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 23 18L14.53 3.86a1.5 1.5 0 0 0-2.24 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <circle cx="12" cy="17" r="1" />
+                </svg>
+              </div>
+            </div>
+            <h2 className="mb-2 text-2xl font-bold text-red-600">
+              Hello {user.fullName}
+            </h2>
+            <p className="mb-4 text-base text-slate-500 leading-relaxed">
+              Your account has been blocked by the administrator. Please contact your broker for assistance or inquiries about your account status.
+              <br />
+              If you believe this is a mistake, reach out to support and we'll help resolve it.
+            </p>
+            <div className="mb-6 text-3xl">🔒</div>
+            <button
+              onClick={() => { window.location.href = 'mailto:support@ajmeraexchange.com'; }}
+              className="mx-auto mb-3 block w-64 rounded-2xl bg-gradient-to-r from-orange-400 to-orange-500 px-6 py-3 text-base font-semibold text-white shadow-md transition"
+            >
+              Contact Support
+            </button>
+            <button
+              onClick={() => void handleLogout()}
+              className="mx-auto block w-64 rounded-2xl border-2 border-slate-300 bg-white px-6 py-2 text-base font-semibold text-slate-700 hover:bg-slate-50 transition"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 flex flex-col">
+        <header className="bg-gradient-to-r from-sky-500 to-sky-600 px-4 py-4 text-white shadow-md">
+          <div className="mx-auto max-w-5xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <img
+                src="/logo.jpeg"
+                alt="Ajmeraexchange"
+                className="h-8 w-8 rounded-full bg-white object-cover"
+              />
+              <h1 className="text-lg font-semibold">Ajmeraexchange</h1>
+            </div>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center px-4 py-6">
+          <div className="w-full max-w-md rounded-3xl border-4 border-red-400 bg-gradient-to-br from-red-50 to-pink-50 p-8 shadow-lg text-center">
+            <div className="mb-6 flex justify-center">
+              <div className="rounded-full bg-red-500 p-4">
+                <svg className="h-12 w-12 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+            <h2 className="mb-2 text-2xl font-bold text-slate-900">
+              {error ? "Something Went Wrong" : "Not Authenticated"}
+            </h2>
+            <p className="mb-4 text-base text-slate-600">
+              {error || "Please login to access your dashboard."}
+            </p>
+            <div className="mb-6 text-3xl">⚠️</div>
+            <a
+              href="/login"
+              className="w-full block rounded-full bg-gradient-to-r from-orange-400 to-orange-500 px-6 py-3 text-base font-semibold text-white hover:from-orange-500 hover:to-orange-600 shadow-md transition"
+            >
+              Go to Login
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 flex flex-col">
+        <header className="bg-gradient-to-r from-sky-500 to-sky-600 px-4 py-4 text-white shadow-md">
+          <div className="mx-auto max-w-5xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <img
+                src="/logo.jpeg"
+                alt="Ajmeraexchange"
+                className="h-8 w-8 rounded-full bg-white object-cover"
+              />
+              <h1 className="text-lg font-semibold">Ajmeraexchange</h1>
+            </div>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center px-4 py-6">
+          <div className="w-full max-w-md rounded-3xl border-4 border-red-400 bg-gradient-to-br from-red-50 to-pink-50 p-8 shadow-lg text-center">
+            <div className="mb-6 flex justify-center">
+              <div className="rounded-full bg-red-500 p-4">
+                <svg className="h-12 w-12 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+            <h2 className="mb-2 text-2xl font-bold text-slate-900">
+              Hello, {user.fullName || "User"}
+            </h2>
+            <p className="mb-4 text-base text-slate-600">
+              {error}
+            </p>
+            <div className="mb-6 text-3xl">⚠️</div>
+            <a
+              href="/login"
+              className="w-full block rounded-full bg-gradient-to-r from-orange-400 to-orange-500 px-6 py-3 text-base font-semibold text-white hover:from-orange-500 hover:to-orange-600 shadow-md transition"
+            >
+              Go to Login
+            </a>
+          </div>
+        </div>
       </div>
     );
   }
@@ -891,6 +1205,69 @@ export default function DashboardPage() {
                   </div>
                 );
               })()}
+            </section>
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-4">
+              <h2 className="text-lg font-semibold text-[#1f3f82]">Indian Markets</h2>
+              <div className="mt-3 rounded-2xl border border-cyan-300/70 p-3">
+                <div className="flex gap-2 overflow-auto pb-2 text-sm">
+                  {indianMarkets.map((item) => (
+                    <button
+                      key={item.symbol}
+                      type="button"
+                      onClick={() => setSelectedIndianSymbol(item.symbol)}
+                      className={`rounded-xl px-3 py-1.5 font-medium whitespace-nowrap ${
+                        selectedIndianMarket.symbol === item.symbol
+                          ? "bg-slate-200 text-slate-900"
+                          : "text-slate-600"
+                      }`}
+                    >
+                      {item.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2">
+                  <p className="text-xl font-semibold text-slate-900">
+                    {selectedIndianMarket.name}
+                  </p>
+                  <p className="text-4xl font-semibold text-slate-900">
+                    {money.format(selectedIndianMarket.price)}
+                    <span className="ml-1 text-lg font-medium text-slate-500">INR</span>
+                  </p>
+                  <p
+                    className={`text-xl font-semibold ${
+                      selectedIndianMarket.yearlyChange >= 0
+                        ? "text-emerald-600"
+                        : "text-rose-600"
+                    }`}
+                  >
+                    {formatSigned(selectedIndianMarket.yearlyChange)}{" "}
+                    {formatSignedPct(selectedIndianMarket.yearlyChangePct)} Past year
+                  </p>
+                  <div className="mt-3 flex gap-2 text-[11px]">
+                    {["1D", "1M", "3M", "1Y", "5Y", "All"].map((k) => (
+                      <span
+                        key={k}
+                        className={`rounded-lg px-2 py-1 font-semibold ${
+                          k === "1Y" ? "bg-slate-200 text-slate-900" : "text-slate-500"
+                        }`}
+                      >
+                        {k}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-2">
+                    <Chart
+                      points={makeAutoPoints(
+                        selectedIndianMarket.chartBase,
+                        selectedIndianMarket.chartWiggle,
+                        18,
+                        chartTick + selectedIndianMarket.symbol.length * 31,
+                      )}
+                    />
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section className="rounded-3xl border border-slate-200 bg-white p-4">
@@ -1246,18 +1623,27 @@ export default function DashboardPage() {
 
         {activeTab === "orders" && (
           <div className="space-y-3">
-            <section className="rounded-3xl bg-white p-4 shadow-md">
-              <h2 className="text-sm font-semibold text-slate-800">Orders</h2>
-              <div className="mt-3 flex gap-2 flex-wrap items-center pb-1 text-[11px]">
+            <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-md">
+              <div className="flex items-center justify-between">
+                <span className="w-6" />
+                <h2 className="text-xl font-semibold tracking-tight text-slate-900">Orders</h2>
+                <button
+                  type="button"
+                  className="inline-flex h-6 w-6 items-center justify-center text-slate-700"
+                >
+                  <FaSearch className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-3 flex gap-2 flex-wrap items-center rounded-xl bg-slate-100 p-1 text-[11px]">
                 {orderSegments.map((item) => (
                   <button
                     key={item.key}
                     type="button"
                     onClick={() => setActiveOrderTool(item.key)}
-                    className={`rounded-full px-3 py-1 whitespace-nowrap ${
+                    className={`rounded-lg px-3 py-1.5 whitespace-nowrap ${
                       activeOrderTool === item.key
-                        ? "bg-sky-500 text-white"
-                        : "bg-slate-100 text-slate-600"
+                        ? "bg-sky-600 text-white"
+                        : "text-slate-700"
                     }`}
                   >
                     {item.label}
@@ -1267,7 +1653,7 @@ export default function DashboardPage() {
                   <select
                     value={activeOrderMarket}
                     onChange={(e) => setActiveOrderMarket(e.target.value)}
-                    className="ml-auto rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] text-slate-600 outline-none"
+                    className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] text-slate-700 outline-none"
                   >
                     {availableMarkets.map((m) => (
                       <option key={m} value={m} className="bg-white">
@@ -1277,7 +1663,7 @@ export default function DashboardPage() {
                   </select>
                 )}
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+              <div className="hidden">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-slate-500">Day P/L</p>
                   <p
@@ -1306,62 +1692,92 @@ export default function DashboardPage() {
             </section>
 
             <section className="rounded-3xl border border-slate-200 bg-white p-3">
-              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-xs">
-                <p className="font-semibold text-slate-700">
+              <div className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white text-slate-700 border border-slate-200"
+                  >
+                    <FaSearch className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white text-slate-700 border border-slate-200"
+                  >
+                    <FaFilter className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="rounded-md bg-white px-2 py-1 text-[11px] text-slate-700 border border-slate-200">
+                    {filteredOrders.length}
+                  </span>
+                </div>
+                <p className="font-semibold text-slate-800">
                   {orderSegments.find((segment) => segment.key === activeOrderTool)
                     ?.label || "Orders"}
                 </p>
-                <span className="text-slate-500">
-                  {filteredOrders.length} items
-                </span>
+                <button
+                  type="button"
+                  className="rounded-md bg-rose-900/70 px-2.5 py-1 text-[11px] font-semibold text-rose-300"
+                >
+                  Cancel-All Orders
+                </button>
               </div>
             </section>
 
-            <section className="space-y-3">
+            <section className="space-y-2">
               {filteredOrders.map((o) => (
                 <div
                   key={o.id}
-                  className="rounded-2xl bg-white p-4 shadow-sm"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-3"
                 >
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-start">
                     <div className="flex items-center gap-2">
                       <span
                         className={`font-semibold ${
-                          o.side === "BUY" ? "text-emerald-600" : "text-rose-600"
+                          o.side === "BUY" ? "text-sky-400" : "text-rose-400"
                         }`}
                       >
-                        {o.side}
+                        {o.side === "BUY" ? "Buy" : "Sell"}
                       </span>
-                      <span className="text-xs text-slate-500">
-                        {orderSegments.find((s) => s.key === o.segmentKey)?.label || o.segmentKey}
+                      <span className="text-xs text-slate-600">
+                        {o.productType || "Delivery"}
                       </span>
                     </div>
-                    <span className="text-sm font-semibold">
-                      {money.format(o.ltp)}
+                    <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                      {o.orderTag || (o.status === "OPEN" ? "Amo Submitted" : "Completed")}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">
-                    {o.market || "NSE"} {o.symbol}
-                  </p>
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <span>Qty: {o.qty}</span>
-                    <span>Avg: {money.format(o.avgPrice)}</span>
-                    <span>
-                      P/L:{" "}
-                      <span
-                        className={
-                          o.pnl >= 0 ? "text-emerald-600" : "text-rose-600"
-                        }
+                  <div className="mt-1 flex items-end justify-between">
+                    <p className="text-lg font-semibold text-slate-900">{o.symbol}</p>
+                    <div className="text-right">
+                      <p className="text-xl font-semibold text-slate-900">
+                        {Number(o.ltp || 0).toFixed(2)}{" "}
+                        <span className="text-xs font-medium text-slate-600">
+                          ({Number(o.changePct || 0).toFixed(2)}%)
+                        </span>
+                      </p>
+                      <p
+                        className={`text-sm font-semibold ${
+                          computePnl(o) >= 0 ? "text-emerald-600" : "text-rose-600"
+                        }`}
                       >
-                        {money.format(o.pnl)}
-                      </span>
-                    </span>
-                  </div>
-                  {o.time && (
-                    <div className="mt-1 text-[10px] text-slate-400">
-                      {o.time}
+                        P/L: {computePnl(o) >= 0 ? "+" : ""}{money.format(computePnl(o))}
+                      </p>
                     </div>
-                  )}
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <p className="text-slate-700">
+                      {o.optionType || "CE"}{" "}
+                      {Number(o.strikePrice || 0).toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      {(o.exchange || o.market || "NSE").toUpperCase()}
+                    </p>
+                    <p className="text-slate-700">
+                      Lot: {Number(o.filledLots ?? 0)}/{Number(o.totalLots ?? o.qty ?? 0)} @{" "}
+                      {Number(o.orderPrice ?? o.avgPrice ?? 0).toFixed(2)}
+                    </p>
+                  </div>
                 </div>
               ))}
               {filteredOrders.length === 0 && (
@@ -1642,17 +2058,18 @@ export default function DashboardPage() {
         <div className="fixed inset-x-0 bottom-16 z-20 px-4">
           <div className="mx-auto w-full max-w-5xl rounded-2xl border border-slate-200 bg-white/95 px-4 py-2 shadow-lg backdrop-blur">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-slate-700">Total Gain</p>
+              <span className="text-lg text-slate-500">‹</span>
+              <p className="text-sm font-semibold text-sky-400">Pending</p>
+              <span className="text-lg text-slate-500">›</span>
               <button
                 type="button"
-                onClick={() => setShowOrderGainSheet((prev) => !prev)}
-                className="text-xs font-semibold text-slate-500"
+                className="hidden"
               >
                 ₹ {money.format(ordersConfig?.summary?.totalPnl ?? 0)}{" "}
                 <span className="inline-block">{showOrderGainSheet ? "▾" : "▴"}</span>
               </button>
             </div>
-            {showOrderGainSheet && (
+            {false && (
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                 <div className="rounded-xl bg-slate-50 px-2 py-1.5">
                   <p className="text-slate-500">Open Orders</p>

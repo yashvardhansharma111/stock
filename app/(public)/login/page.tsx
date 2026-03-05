@@ -62,7 +62,7 @@ export default function LoginPage() {
 
           <div className="space-y-1">
             <label className="text-sm font-medium text-slate-800">
-              Password
+              User Password
             </label>
             <div className="relative">
               <input
@@ -71,7 +71,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 pr-10 text-sm text-slate-900 outline-none ring-sky-200/0 placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-200"
-                placeholder="Password shared by admin"
+                placeholder="User Password"
               />
               <button
                 type="button"

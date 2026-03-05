@@ -10,9 +10,21 @@ type OrderSegment = {
 type OrderRow = {
   id: string;
   segmentKey: string;
+  market?: string;
   symbol: string;
   side: "BUY" | "SELL";
+  productType?: string;
+  optionType?: string;
+  strikePrice?: number;
+  exchange?: string;
+  orderTag?: string;
+  changePct?: number;
+  filledLots?: number;
+  totalLots?: number;
+  orderPrice?: number;
   qty: number;
+  lotSize?: number;
+  startDate?: string;
   avgPrice: number;
   ltp: number;
   pnl: number;
@@ -45,9 +57,21 @@ const defaultConfig: OrdersConfig = {
     {
       id: "1",
       segmentKey: "positions",
+      market: "NSE",
       symbol: "RELIANCE",
       side: "BUY",
+      productType: "Delivery",
+      optionType: "CE",
+      strikePrice: 24850,
+      exchange: "NSEFO",
+      orderTag: "Amo Submitted",
+      changePct: 0,
+      filledLots: 0,
+      totalLots: 1,
+      orderPrice: 293.1,
       qty: 10,
+      lotSize: 1,
+      startDate: "2024-01-01",
       avgPrice: 2825,
       ltp: 2850,
       pnl: 250,
@@ -57,9 +81,13 @@ const defaultConfig: OrdersConfig = {
     {
       id: "2",
       segmentKey: "openOrders",
+      market: "NSE",
       symbol: "TCS",
       side: "SELL",
+      productType: "Delivery",
       qty: 5,
+      lotSize: 1,
+      startDate: "2024-01-02",
       avgPrice: 3950,
       ltp: 3920,
       pnl: 150,
@@ -69,9 +97,13 @@ const defaultConfig: OrdersConfig = {
     {
       id: "3",
       segmentKey: "positions",
+      market: "NSE",
       symbol: "HDFCBANK",
       side: "BUY",
+      productType: "Delivery",
       qty: 20,
+      lotSize: 1,
+      startDate: "2024-01-03",
       avgPrice: 1560,
       ltp: 1540,
       pnl: -400,
@@ -97,7 +129,9 @@ export async function GET() {
       : [];
 
     function computePnl(o: OrderRow) {
-      const qty = Number(o.qty || 0);
+      const lots = Number(o.qty || 0);
+      const lotSize = Number(o.lotSize || 1);
+      const qty = lots * lotSize;
       const avg = Number(o.avgPrice || 0);
       const ltp = Number(o.ltp || 0);
       if (o.side === "BUY") {

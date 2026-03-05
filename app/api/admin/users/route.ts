@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { userId, tradingBalance, margin } = body || {};
+    const { userId, tradingBalance, margin, status } = body || {};
 
     if (!userId) {
       return NextResponse.json({ message: "userId is required" }, { status: 400 });
@@ -68,6 +68,9 @@ export async function POST(request: Request) {
     }
     if (typeof margin === "number" && Number.isFinite(margin)) {
       updates.margin = margin;
+    }
+    if (status && ["pending", "active", "blocked"].includes(status)) {
+      updates.status = status;
     }
 
     const db = await getDb();

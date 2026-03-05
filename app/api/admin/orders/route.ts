@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { deleteScopedConfig, readScopedConfig, upsertScopedConfig } from "@/lib/scoped-config";
+import { broadcastEvent } from "@/lib/event-bus";
 
 type OrderSegment = {
   key: string;
@@ -10,9 +11,21 @@ type OrderSegment = {
 type OrderRow = {
   id: string;
   segmentKey: string;
+  market?: string;
   symbol: string;
   side: "BUY" | "SELL";
+  productType?: string;
+  optionType?: string;
+  strikePrice?: number;
+  exchange?: string;
+  orderTag?: string;
+  changePct?: number;
+  filledLots?: number;
+  totalLots?: number;
+  orderPrice?: number;
   qty: number;
+  lotSize?: number;
+  startDate?: string;
   avgPrice: number;
   ltp: number;
   pnl: number;
@@ -61,7 +74,9 @@ export async function GET(request: Request) {
     // derive summary from rows if present
     const orders: OrderRow[] = Array.isArray(config.orders) ? config.orders : [];
     function computePnl(o: OrderRow) {
-      const qty = Number(o.qty || 0);
+      const lots = Number(o.qty || 0);
+      const lotSize = Number(o.lotSize || 1);
+      const qty = lots * lotSize;
       const avg = Number(o.avgPrice || 0);
       const ltp = Number(o.ltp || 0);
       if (o.side === "BUY") {
@@ -113,6 +128,14 @@ export async function POST(request: Request) {
       userId: body.scopeUserId || null,
       config,
     });
+
+    // notify connected dashboards (development-friendly in-memory broadcast)
+    try {
+      broadcastEvent({ type: "orders:update", config, scopeUserId: body.scopeUserId || null });
+    } catch (err) {
+      // don't fail the request if broadcasting fails
+      console.error("Broadcast error:", err);
+    }
 
     return NextResponse.json({ message: "Orders updated" });
   } catch (error) {
