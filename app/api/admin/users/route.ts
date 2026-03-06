@@ -23,6 +23,7 @@ export async function GET() {
         {
           projection: {
             fullName: 1,
+            clientId: 1,
             email: 1,
             phone: 1,
             panNumber: 1,
@@ -56,13 +57,38 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { userId, tradingBalance, margin, status } = body || {};
+    const { userId, tradingBalance, margin, status, clientId } = body || {};
 
     if (!userId) {
       return NextResponse.json({ message: "userId is required" }, { status: 400 });
     }
 
+    const db = await getDb();
+    const users = db.collection("users");
+
     const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (typeof clientId === "string") {
+      const normalized = clientId.trim();
+      if (!normalized) {
+        return NextResponse.json(
+          { message: "clientId cannot be empty" },
+          { status: 400 },
+        );
+      }
+
+      const existing = await users.findOne({
+        clientId: normalized,
+        _id: { $ne: new ObjectId(userId) },
+      });
+      if (existing) {
+        return NextResponse.json(
+          { message: "clientId already exists" },
+          { status: 400 },
+        );
+      }
+
+      updates.clientId = normalized;
+    }
     if (typeof tradingBalance === "number" && Number.isFinite(tradingBalance)) {
       updates.tradingBalance = tradingBalance;
     }
@@ -73,8 +99,6 @@ export async function POST(request: Request) {
       updates.status = status;
     }
 
-    const db = await getDb();
-    const users = db.collection("users");
     await users.updateOne(
       { _id: new ObjectId(userId) },
       {

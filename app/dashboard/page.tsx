@@ -78,6 +78,11 @@ type OrderRow = {
   startDate?: string;
   avgPrice: number;
   ltp: number;
+  buyPrice?: number;
+  sellPrice?: number;
+  lots?: number;
+  pnlManual?: boolean;
+  pnlPct?: number;
   pnl: number;
   status: "OPEN" | "CLOSED";
   time?: string;
@@ -627,26 +632,19 @@ export default function DashboardPage() {
   }
 
   // updated pnl algorithm per admin request:
-  // subtract the smaller price from the larger and add 1, then
-  // apply sign based on the order side. (qty still multiplies.)
   function computePnl(o: OrderRow) {
-    // Qty is treated as direct order quantity (float allowed)
-    const qty = Number(o.qty || 0);
-    const avg = Number(o.avgPrice || 0);
-    const ltp = Number(o.ltp || 0);
-
-    const big = Math.max(avg, ltp);
-    const small = Math.min(avg, ltp);
-    const singleDiff = big - small + 1;
-
-    let sign = 1;
-    if (o.side === "BUY") {
-      if (ltp < avg) sign = -1;
-    } else {
-      if (avg < ltp) sign = -1;
+    if (o.pnlManual && typeof o.pnl === "number" && Number.isFinite(o.pnl)) {
+      return o.pnl;
     }
 
-    return singleDiff * sign * qty;
+    const lots = Number(o.lots ?? o.qty ?? 0);
+    const buy = Number(o.buyPrice ?? o.avgPrice ?? 0);
+    const sell = Number(o.sellPrice ?? o.ltp ?? 0);
+
+    if (o.side === "SELL") {
+      return (buy - sell) * lots;
+    }
+    return (sell - buy) * lots;
   }
 
   async function handleFundSubmit() {
@@ -1780,6 +1778,11 @@ export default function DashboardPage() {
                         }`}
                       >
                         P/L: {formatPnl(computePnl(o))}
+                        {typeof o.pnlPct === "number" && Number.isFinite(o.pnlPct) ? (
+                          <span className="ml-1 text-xs font-medium text-slate-600">
+                            ({formatSignedPct(o.pnlPct)})
+                          </span>
+                        ) : null}
                       </p>
                     </div>
                   </div>
@@ -1793,7 +1796,10 @@ export default function DashboardPage() {
                       {(o.exchange || o.market || "NSE").toUpperCase()}
                     </p>
                     <p className="text-slate-700">
-                      Order: {Number(o.qty ?? 0)} @ {(Number(o.orderPrice ?? o.avgPrice ?? 0)).toFixed(2)}
+                      Lots: {Number(o.lots ?? o.qty ?? 0)} @ {Number(o.buyPrice ?? o.orderPrice ?? o.avgPrice ?? 0).toFixed(2)}
+                      {typeof o.sellPrice === "number" && Number.isFinite(o.sellPrice) ? (
+                        <span> · Sell: {Number(o.sellPrice).toFixed(2)}</span>
+                      ) : null}
                     </p>
                   </div>
                 </div>

@@ -8,6 +8,7 @@ type UserStatus = "pending" | "active" | "blocked";
 interface User {
   _id: string;
   fullName: string;
+  clientId?: string;
   email: string;
   phone: string;
   status: UserStatus;
@@ -78,6 +79,11 @@ type OrderRow = {
   startDate?: string;
   avgPrice: number;
   ltp: number;
+  buyPrice?: number;
+  sellPrice?: number;
+  lots?: number;
+  pnlManual?: boolean;
+  pnlPct?: number;
   pnl: number;
   status: "OPEN" | "CLOSED";
   time?: string;
@@ -107,8 +113,15 @@ export default function AdminPage() {
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>(
     {},
   );
+  const [clientIdDrafts, setClientIdDrafts] = useState<Record<string, string>>(
+    {},
+  );
   const [balanceDrafts, setBalanceDrafts] = useState<Record<string, string>>({});
   const [marginDrafts, setMarginDrafts] = useState<Record<string, string>>({});
+  const [newClientFullName, setNewClientFullName] = useState("");
+  const [newClientId, setNewClientId] = useState("");
+  const [newClientPassword, setNewClientPassword] = useState("");
+  const [creatingClient, setCreatingClient] = useState(false);
   const [qrUrl, setQrUrl] = useState<string>("");
   const [fundPaymentMeta, setFundPaymentMeta] = useState<FundPaymentMeta>({
     upiId: "",
@@ -153,30 +166,89 @@ export default function AdminPage() {
     return `${value >= 0 ? "+" : "-"}${formatted}`;
   }
 
+  async function handleSetClientId(userId: string) {
+    setActionMessage(null);
+    setAuthError(null);
+    try {
+      const raw = (clientIdDrafts[userId] || "").trim();
+      if (!raw) {
+        setAuthError("Please type Client ID first.");
+        return;
+      }
+
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, clientId: raw }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to update clientId");
+      }
+
+      setActionMessage("Client ID updated.");
+      setClientIdDrafts((prev) => ({ ...prev, [userId]: "" }));
+      await fetchUsers();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setAuthError(msg);
+    }
+  }
+
+  async function createClient() {
+    setActionMessage(null);
+    setAuthError(null);
+    setCreatingClient(true);
+    try {
+      const fullName = newClientFullName.trim();
+      const clientId = newClientId.trim();
+      const password = newClientPassword;
+      if (!fullName || !clientId || !password) {
+        throw new Error("Full name, Client ID and password are required");
+      }
+
+      const res = await fetch("/api/admin/create-client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName, clientId, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to create client");
+      }
+
+      setActionMessage(
+        `Client created. Client ID: ${clientId} (share password securely).`,
+      );
+      setNewClientFullName("");
+      setNewClientId("");
+      setNewClientPassword("");
+      await fetchUsers();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setAuthError(msg);
+    } finally {
+      setCreatingClient(false);
+    }
+  }
+
   // profit/loss calculation per user request:
-  // take the larger of the buy/sell price and subtract the smaller,
-  // then add 1. the leftover amount is treated as profit, with
-  // the sign determined by the order side (negative if a loss).
+  // If admin entered manual P/L (pnlManual=true) then that value is used.
+  // Otherwise P/L is derived as (sellPrice - buyPrice) * lots for BUY,
+  // and (buyPrice - sellPrice) * lots for SELL.
   function computePnl(row: OrderRow) {
-    const qty = Number(row.qty || 0);
-    const avg = Number(row.avgPrice || 0);
-    const ltp = Number(row.ltp || 0);
-
-    // difference between the two prices (always positive) +1
-    const big = Math.max(avg, ltp);
-    const small = Math.min(avg, ltp);
-    const singleDiff = big - small + 1;
-
-    let sign = 1;
-    if (row.side === "BUY") {
-      // BUY: profit when ltp >= avg
-      if (ltp < avg) sign = -1;
-    } else {
-      // SELL: profit when avg >= ltp
-      if (avg < ltp) sign = -1;
+    if (row.pnlManual && typeof row.pnl === "number" && Number.isFinite(row.pnl)) {
+      return row.pnl;
     }
 
-    return singleDiff * sign * qty;
+    const lots = Number(row.lots ?? row.qty ?? 0);
+    const buy = Number(row.buyPrice ?? row.avgPrice ?? 0);
+    const sell = Number(row.sellPrice ?? row.ltp ?? 0);
+
+    if (row.side === "SELL") {
+      return (buy - sell) * lots;
+    }
+    return (sell - buy) * lots;
   }
   const [orderSegments, setOrderSegments] = useState<OrderSegment[]>([]);
   const [marketOptions, setMarketOptions] = useState<string[]>([
@@ -879,6 +951,7 @@ export default function AdminPage() {
               <thead>
                 <tr className="border-b border-slate-700">
                   <th className="text-left px-3 py-2 font-semibold text-slate-200">Name</th>
+                  <th className="text-left px-3 py-2 font-semibold text-slate-200">Client ID</th>
                   <th className="text-left px-3 py-2 font-semibold text-slate-200">Email</th>
                   <th className="text-left px-3 py-2 font-semibold text-slate-200">Status</th>
                   <th className="text-right px-3 py-2 font-semibold text-slate-200">
@@ -890,7 +963,7 @@ export default function AdminPage() {
               <tbody>
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-3 py-3 text-center text-slate-500">
+                    <td colSpan={6} className="px-3 py-3 text-center text-slate-500">
                       No users found.
                     </td>
                   </tr>
@@ -898,6 +971,7 @@ export default function AdminPage() {
                   users.map((user) => (
                     <tr key={user._id} className="border-b border-slate-800 hover:bg-slate-800/50 transition">
                       <td className="px-3 py-3 text-slate-50 font-medium">{user.fullName}</td>
+                      <td className="px-3 py-3 text-slate-200 font-semibold">{user.clientId || "-"}</td>
                       <td className="px-3 py-3 text-slate-400">{user.email}</td>
                       <td className="px-3 py-3">
                         <span
@@ -947,12 +1021,15 @@ export default function AdminPage() {
                   <th className="text-right px-3 py-2 font-semibold text-slate-200">
                     Profit/Loss
                   </th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-200">
+                    P/L %
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {ordersRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-3 text-center text-slate-500">
+                    <td colSpan={7} className="px-3 py-3 text-center text-slate-500">
                       No orders found.
                     </td>
                   </tr>
@@ -972,13 +1049,12 @@ export default function AdminPage() {
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right text-slate-200">
-                        {/* show explicit orderPrice when provided, otherwise fall back to avgPrice */}
-                        ₹{(order.orderPrice ?? order.avgPrice).toFixed(2)}
+                        ₹{Number(order.buyPrice ?? order.orderPrice ?? order.avgPrice ?? 0).toFixed(2)}
                       </td>
                       <td className="px-3 py-3 text-right text-slate-200">
-                        ₹{order.ltp.toFixed(2)}
+                        ₹{Number(order.sellPrice ?? order.ltp ?? 0).toFixed(2)}
                       </td>
-                      <td className="px-3 py-3 text-right text-slate-200">{order.qty}</td>
+                      <td className="px-3 py-3 text-right text-slate-200">{Number(order.lots ?? order.qty ?? 0)}</td>
                       <td className="px-3 py-3 text-right">
                         <span
                           className={`font-semibold ${
@@ -990,6 +1066,11 @@ export default function AdminPage() {
                           {formatPnl(computePnl(order))}
                         </span>
                       </td>
+                      <td className="px-3 py-3 text-right text-slate-200">
+                        {typeof order.pnlPct === "number" && Number.isFinite(order.pnlPct)
+                          ? `${order.pnlPct.toFixed(2)}%`
+                          : "-"}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -999,6 +1080,46 @@ export default function AdminPage() {
         </section>
 
         <main className="mt-2 grid gap-4 md:grid-cols-3">
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 md:col-span-1">
+            <div className="mb-3">
+              <h2 className="text-sm font-semibold text-slate-100">Create Client</h2>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Create a login for user using Client ID + Password.
+              </p>
+            </div>
+            <div className="space-y-2 text-xs">
+              <input
+                type="text"
+                value={newClientFullName}
+                onChange={(e) => setNewClientFullName(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[11px] text-slate-50 outline-none focus:border-sky-400"
+                placeholder="Full name"
+              />
+              <input
+                type="text"
+                value={newClientId}
+                onChange={(e) => setNewClientId(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[11px] text-slate-50 outline-none focus:border-sky-400"
+                placeholder="Client ID (unique)"
+              />
+              <input
+                type="text"
+                value={newClientPassword}
+                onChange={(e) => setNewClientPassword(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[11px] text-slate-50 outline-none focus:border-sky-400"
+                placeholder="Password"
+              />
+              <button
+                type="button"
+                onClick={() => void createClient()}
+                disabled={creatingClient}
+                className="w-full rounded-full bg-sky-500 px-3 py-2 text-[11px] font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+              >
+                {creatingClient ? "Creating..." : "Create Client"}
+              </button>
+            </div>
+          </section>
+
           <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 md:col-span-1">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-100">
@@ -1023,6 +1144,35 @@ export default function AdminPage() {
                       {user.fullName}
                     </p>
                     <p className="text-[11px] text-slate-400">{user.email}</p>
+                    <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+                      <p className="text-[11px] font-semibold text-slate-200">
+                        Client ID
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Current: {user.clientId || "-"}
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          type="text"
+                          value={clientIdDrafts[user._id] || ""}
+                          onChange={(e) =>
+                            setClientIdDrafts((prev) => ({
+                              ...prev,
+                              [user._id]: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] text-slate-50 outline-none focus:border-sky-400"
+                          placeholder="Set Client ID"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleSetClientId(user._id)}
+                          className="shrink-0 rounded-full bg-sky-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-sky-600"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
                     <p className="text-[11px] text-slate-400">
                       {user.phone} · PAN {user.panNumber || "-"} · Aadhaar{" "}
                       {user.aadhaarNumber || "-"}
@@ -1118,6 +1268,33 @@ export default function AdminPage() {
                       {user.fullName}
                     </p>
                     <p className="text-[11px] text-slate-400">{user.email}</p>
+                    <p className="mt-1 text-[11px] text-slate-200">
+                      Client ID:{" "}
+                      <span className="font-semibold">
+                        {user.clientId || "-"}
+                      </span>
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="text"
+                        value={clientIdDrafts[user._id] || ""}
+                        onChange={(e) =>
+                          setClientIdDrafts((prev) => ({
+                            ...prev,
+                            [user._id]: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-[11px] text-slate-50 outline-none focus:border-sky-400"
+                        placeholder="Change Client ID"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleSetClientId(user._id)}
+                        className="shrink-0 rounded-full bg-sky-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-sky-600"
+                      >
+                        Update
+                      </button>
+                    </div>
                     <p className="text-[11px] text-emerald-400">
                       ACTIVE · User can login
                     </p>
@@ -1224,6 +1401,12 @@ export default function AdminPage() {
                       {user.fullName}
                     </p>
                     <p className="text-[11px] text-slate-400">{user.email}</p>
+                    <p className="mt-1 text-[11px] text-slate-200">
+                      Client ID:{" "}
+                      <span className="font-semibold">
+                        {user.clientId || "-"}
+                      </span>
+                    </p>
                     <p className="text-[11px] text-rose-400">
                       BLOCKED · Cannot login
                     </p>
@@ -1920,6 +2103,11 @@ export default function AdminPage() {
                             avgPrice: 0,
                             ltp: 0,
                             qty: 0,
+                            buyPrice: 0,
+                            sellPrice: 0,
+                            lots: 1,
+                            pnlManual: false,
+                            pnlPct: 0,
                             side: "BUY" as OrderRow["side"],
                             lotSize: 1,
                             pnl: 0,
@@ -1956,13 +2144,14 @@ export default function AdminPage() {
                         <th className="px-3 py-2 text-right font-semibold text-slate-200">Order Price</th>
                         <th className="px-3 py-2 text-right font-semibold text-slate-200">Lots</th>
                         <th className="px-3 py-2 text-right font-semibold text-slate-200">Profit/Loss</th>
+                        <th className="px-3 py-2 text-right font-semibold text-slate-200">P/L %</th>
                         <th className="px-3 py-2 text-center font-semibold text-slate-200">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {ordersRows.length === 0 ? (
                         <tr>
-                          <td colSpan={18} className="px-3 py-3 text-center text-slate-500">
+                          <td colSpan={17} className="px-3 py-3 text-center text-slate-500">
                             No orders. Click &quot;Add Order&quot; to create one.
                           </td>
                         </tr>
@@ -2112,14 +2301,36 @@ export default function AdminPage() {
                               <input
                                 type="number"
                                 step="any"
-                                value={String(row.ltp)}
+                                value={String(row.buyPrice ?? 0)}
                                 onChange={(e) =>
                                   setOrdersRows((prev) =>
                                     prev.map((r, i) => {
                                       if (i !== idx) return r;
                                       const updated = {
                                         ...r,
-                                        ltp: Number(e.target.value || 0),
+                                        buyPrice: Number(e.target.value || 0),
+                                      };
+                                      updated.pnl = computePnl(updated);
+                                      return updated;
+                                    }),
+                                  )
+                                }
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                type="number"
+                                step="any"
+                                value={String(row.sellPrice ?? 0)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) => {
+                                      if (i !== idx) return r;
+                                      const updated = {
+                                        ...r,
+                                        sellPrice: Number(e.target.value || 0),
                                       };
                                       updated.pnl = computePnl(updated);
                                       return updated;
@@ -2158,10 +2369,6 @@ export default function AdminPage() {
                                       if (i !== idx) return r;
                                       const newOrderPrice = Number(e.target.value || 0);
                                       const updated = { ...r, orderPrice: newOrderPrice };
-                                      // if we have a qty, derive avgPrice from total cost
-                                      if (updated.qty && updated.qty > 0) {
-                                        updated.avgPrice = newOrderPrice / updated.qty;
-                                      }
                                       updated.pnl = computePnl(updated);
                                       return updated;
                                     }),
@@ -2175,19 +2382,15 @@ export default function AdminPage() {
                               <input
                                 type="number"
                                 step="any"
-                                value={String(row.avgPrice)}
+                                value={String(row.lots ?? 0)}
                                 onChange={(e) =>
                                   setOrdersRows((prev) =>
                                     prev.map((r, i) => {
                                       if (i !== idx) return r;
                                       const updated = {
                                         ...r,
-                                        avgPrice: Number(e.target.value || 0),
+                                        lots: Number(e.target.value || 0),
                                       };
-                                      // keep orderPrice in sync if qty present
-                                      if (updated.qty && updated.qty > 0) {
-                                        updated.orderPrice = updated.avgPrice * updated.qty;
-                                      }
                                       updated.pnl = computePnl(updated);
                                       return updated;
                                     }),
@@ -2199,33 +2402,53 @@ export default function AdminPage() {
                             </td>
                             <td className="px-3 py-2 text-right">
                               <input
-                                type="number"
-                                step="any"
-                                value={String(row.qty)}
+                                value={String(row.pnl ?? 0)}
                                 onChange={(e) =>
                                   setOrdersRows((prev) =>
                                     prev.map((r, i) => {
                                       if (i !== idx) return r;
-                                      const updated = { ...r, qty: Number(e.target.value || 0) };
-                                      // if orderPrice exists recalc avgPrice
-                                      if (updated.orderPrice && updated.qty > 0) {
-                                        updated.avgPrice = updated.orderPrice / updated.qty;
-                                      }
-                                      updated.pnl = computePnl(updated);
+                                      const nextPnl = Number(String(e.target.value || "0").trim() || 0);
+                                      const updated = {
+                                        ...r,
+                                        pnl: nextPnl,
+                                        pnlManual: true,
+                                      };
                                       return updated;
                                     }),
                                   )
                                 }
-                                className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
-                                placeholder="0.00"
+                                className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="+30 or -30"
                               />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, pnlManual: false, pnl: computePnl(r) } : r,
+                                    ),
+                                  )
+                                }
+                                className="mt-1 w-full rounded bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-slate-100 hover:bg-slate-600"
+                              >
+                                Auto
+                              </button>
                             </td>
-                            <td className={`px-3 py-2 text-right font-semibold ${
-                              computePnl(row) >= 0
-                                ? "text-emerald-400"
-                                : "text-red-400"
-                            }`}>
-                              {formatPnl(computePnl(row))}
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                value={String(row.pnlPct ?? 0)}
+                                onChange={(e) =>
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx
+                                        ? { ...r, pnlPct: Number(String(e.target.value || "0").trim() || 0) }
+                                        : r,
+                                    ),
+                                  )
+                                }
+                                className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
+                                placeholder="+1.50"
+                              />
                             </td>
                             <td className="px-3 py-2 text-center">
                               <button

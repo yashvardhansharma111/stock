@@ -27,6 +27,11 @@ type OrderRow = {
   startDate?: string;
   avgPrice: number;
   ltp: number;
+  buyPrice?: number;
+  sellPrice?: number;
+  lots?: number;
+  pnlManual?: boolean;
+  pnlPct?: number;
   pnl: number;
   status: "OPEN" | "CLOSED";
   time?: string;
@@ -74,6 +79,11 @@ const defaultConfig: OrdersConfig = {
       startDate: "2024-01-01",
       avgPrice: 2825,
       ltp: 2850,
+      buyPrice: 150,
+      sellPrice: 180,
+      lots: 1,
+      pnlManual: false,
+      pnlPct: 0,
       pnl: 250,
       status: "OPEN",
       time: "11:05",
@@ -90,6 +100,11 @@ const defaultConfig: OrdersConfig = {
       startDate: "2024-01-02",
       avgPrice: 3950,
       ltp: 3920,
+      buyPrice: 180,
+      sellPrice: 150,
+      lots: 1,
+      pnlManual: false,
+      pnlPct: 0,
       pnl: 150,
       status: "OPEN",
       time: "12:40",
@@ -106,6 +121,11 @@ const defaultConfig: OrdersConfig = {
       startDate: "2024-01-03",
       avgPrice: 1560,
       ltp: 1540,
+      buyPrice: 150,
+      sellPrice: 120,
+      lots: 1,
+      pnlManual: false,
+      pnlPct: 0,
       pnl: -400,
       status: "CLOSED",
       time: "10:10",
@@ -128,24 +148,19 @@ export async function GET() {
       ? config.orders
       : [];
 
-    // updated pnl logic from admin side requirements
     function computePnl(o: OrderRow) {
-      const qty = Number(o.qty || 0);
-      const avg = Number(o.avgPrice || 0);
-      const ltp = Number(o.ltp || 0);
-
-      const big = Math.max(avg, ltp);
-      const small = Math.min(avg, ltp);
-      const singleDiff = big - small + 1;
-
-      let sign = 1;
-      if (o.side === "BUY") {
-        if (ltp < avg) sign = -1;
-      } else {
-        if (avg < ltp) sign = -1;
+      if (o.pnlManual && typeof o.pnl === "number" && Number.isFinite(o.pnl)) {
+        return o.pnl;
       }
 
-      return singleDiff * sign * qty;
+      const lots = Number(o.lots ?? o.qty ?? 0);
+      const buy = Number(o.buyPrice ?? o.avgPrice ?? 0);
+      const sell = Number(o.sellPrice ?? o.ltp ?? 0);
+
+      if (o.side === "SELL") {
+        return (buy - sell) * lots;
+      }
+      return (sell - buy) * lots;
     }
 
     const derivedSummary = {

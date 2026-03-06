@@ -8,11 +8,12 @@ import { cookies } from "next/headers";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password } = body || {};
+    const { clientId, email, password } = body || {};
 
-    if (!email || !password) {
+    const loginId = (clientId ?? email ?? "").toString().trim();
+    if (!loginId || !password) {
       return NextResponse.json(
-        { message: "Email and password are required" },
+        { message: "Client ID and password are required" },
         { status: 400 },
       );
     }
@@ -21,7 +22,11 @@ export async function POST(request: Request) {
     const users = db.collection("users");
 
     const user = await users.findOne<{ passwordHash?: string; status?: string }>(
-      { email },
+      clientId
+        ? { clientId: loginId }
+        : {
+            $or: [{ clientId: loginId }, { email: loginId }],
+          },
     );
 
     if (!user || user.status !== "active" || !user.passwordHash) {
