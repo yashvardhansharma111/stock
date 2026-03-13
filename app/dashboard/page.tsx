@@ -1764,10 +1764,21 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <div className="mt-1 flex items-end justify-between">
-                    <p className="text-lg font-semibold text-slate-900">{o.symbol}</p>
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{o.symbol}</p>
+                      <p className="text-sm text-slate-700">
+                        {o.optionType || "CE"}{" "}
+                        {Number(o.strikePrice ?? 0).toFixed(2)}{" "}
+                        {(o.exchange || o.market || "NSE").toUpperCase()}
+                      </p>
+                    </div>
                     <div className="text-right">
                       <p className="text-xl font-semibold text-slate-900">
-                        {Number(o.ltp || 0).toFixed(2)}{" "}
+                        {Number(
+                          typeof o.sellPrice === "number" && Number.isFinite(o.sellPrice)
+                            ? o.sellPrice
+                            : o.ltp || 0,
+                        ).toFixed(2)}{" "}
                         <span className="text-xs font-medium text-slate-600">
                           ({Number(o.changePct || 0).toFixed(2)}%)
                         </span>
@@ -1788,18 +1799,8 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-1 flex items-center justify-between text-sm">
                     <p className="text-slate-700">
-                      {o.optionType || "CE"}{" "}
-                      {Number(o.strikePrice || 0).toLocaleString("en-IN", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      {(o.exchange || o.market || "NSE").toUpperCase()}
-                    </p>
-                    <p className="text-slate-700">
-                      Lots: {Number(o.lots ?? o.qty ?? 0)} @ {Number(o.buyPrice ?? o.orderPrice ?? o.avgPrice ?? 0).toFixed(2)}
-                      {typeof o.sellPrice === "number" && Number.isFinite(o.sellPrice) ? (
-                        <span className="ml-1">{Number(o.sellPrice).toFixed(2)}</span>
-                      ) : null}
+                      Lots: {Number(o.lots ?? o.qty ?? 0)} @{" "}
+                      {Number(o.buyPrice ?? o.orderPrice ?? o.avgPrice ?? 0).toFixed(2)}
                     </p>
                   </div>
                 </div>

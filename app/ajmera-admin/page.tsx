@@ -145,6 +145,8 @@ export default function AdminPage() {
     totalPnl: 0,
   });
   const [ordersRows, setOrdersRows] = useState<OrderRow[]>([]);
+  const [pnlDrafts, setPnlDrafts] = useState<Record<string, string>>({});
+  const [pnlPctDrafts, setPnlPctDrafts] = useState<Record<string, string>>({});
 
   // keep summary up to date as rows are edited locally
   useEffect(() => {
@@ -2538,21 +2540,60 @@ export default function AdminPage() {
                             </td>
                             <td className="px-3 py-2 text-right">
                               <input
-                                value={String(row.pnl ?? 0)}
-                                onChange={(e) =>
-                                  setOrdersRows((prev) =>
-                                    prev.map((r, i) => {
-                                      if (i !== idx) return r;
-                                      const nextPnl = Number(String(e.target.value || "0").trim() || 0);
-                                      const updated = {
-                                        ...r,
-                                        pnl: nextPnl,
-                                        pnlManual: true,
-                                      };
-                                      return updated;
-                                    }),
-                                  )
+                                type="text"
+                                inputMode="decimal"
+                                value={
+                                  Object.prototype.hasOwnProperty.call(pnlDrafts, row.id)
+                                    ? pnlDrafts[row.id]
+                                    : String(row.pnl ?? 0)
                                 }
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  setPnlDrafts((prev) => ({ ...prev, [row.id]: raw }));
+
+                                  const trimmed = raw.trim();
+                                  const isIncomplete =
+                                    trimmed === "" ||
+                                    trimmed === "+" ||
+                                    trimmed === "-" ||
+                                    trimmed.endsWith(".");
+                                  const next = Number(trimmed);
+                                  if (isIncomplete || !Number.isFinite(next)) return;
+
+                                  setOrdersRows((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx
+                                        ? {
+                                            ...r,
+                                            pnl: next,
+                                            pnlManual: true,
+                                          }
+                                        : r,
+                                    ),
+                                  );
+                                }}
+                                onBlur={() => {
+                                  const raw = (pnlDrafts[row.id] ?? String(row.pnl ?? 0)).trim();
+                                  const next = Number(raw);
+                                  if (Number.isFinite(next)) {
+                                    setOrdersRows((prev) =>
+                                      prev.map((r, i) =>
+                                        i === idx
+                                          ? {
+                                              ...r,
+                                              pnl: next,
+                                              pnlManual: true,
+                                            }
+                                          : r,
+                                      ),
+                                    );
+                                  }
+                                  setPnlDrafts((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[row.id];
+                                    return copy;
+                                  });
+                                }}
                                 className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
                                 placeholder="+30 or -30"
                               />
@@ -2572,16 +2613,48 @@ export default function AdminPage() {
                             </td>
                             <td className="px-3 py-2 text-right">
                               <input
-                                value={String(row.pnlPct ?? 0)}
-                                onChange={(e) =>
+                                type="text"
+                                inputMode="decimal"
+                                value={
+                                  Object.prototype.hasOwnProperty.call(pnlPctDrafts, row.id)
+                                    ? pnlPctDrafts[row.id]
+                                    : String(row.pnlPct ?? 0)
+                                }
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  setPnlPctDrafts((prev) => ({ ...prev, [row.id]: raw }));
+
+                                  const trimmed = raw.trim();
+                                  const isIncomplete =
+                                    trimmed === "" ||
+                                    trimmed === "+" ||
+                                    trimmed === "-" ||
+                                    trimmed.endsWith(".");
+                                  const next = Number(trimmed);
+                                  if (isIncomplete || !Number.isFinite(next)) return;
+
                                   setOrdersRows((prev) =>
                                     prev.map((r, i) =>
-                                      i === idx
-                                        ? { ...r, pnlPct: Number(String(e.target.value || "0").trim() || 0) }
-                                        : r,
+                                      i === idx ? { ...r, pnlPct: next } : r,
                                     ),
-                                  )
-                                }
+                                  );
+                                }}
+                                onBlur={() => {
+                                  const raw = (pnlPctDrafts[row.id] ?? String(row.pnlPct ?? 0)).trim();
+                                  const next = Number(raw);
+                                  if (Number.isFinite(next)) {
+                                    setOrdersRows((prev) =>
+                                      prev.map((r, i) =>
+                                        i === idx ? { ...r, pnlPct: next } : r,
+                                      ),
+                                    );
+                                  }
+                                  setPnlPctDrafts((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[row.id];
+                                    return copy;
+                                  });
+                                }}
                                 className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 text-right outline-none focus:border-sky-400"
                                 placeholder="+1.50"
                               />
