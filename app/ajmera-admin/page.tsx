@@ -134,6 +134,7 @@ export default function AdminPage() {
   const [qrImageFile, setQrImageFile] = useState<File | null>(null);
   const [hasQrImage, setHasQrImage] = useState(false);
   const [savingQrImage, setSavingQrImage] = useState(false);
+  const [savingBankDetails, setSavingBankDetails] = useState(false);
   const [fundRequests, setFundRequests] = useState<FundRequest[]>([]);
   const [homeIndices, setHomeIndices] = useState<HomeIndexRow[]>([]);
   const [homeStocks, setHomeStocks] = useState<HomeStockRow[]>([]);
@@ -799,12 +800,76 @@ export default function AdminPage() {
       if (!res.ok) {
         throw new Error(data.message || "Failed to save QR");
       }
-      setActionMessage("QR code updated successfully.");
+      setActionMessage("QR updated.");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       setAuthError(msg);
     } finally {
       setSavingQr(false);
+    }
+  }
+
+  async function updateBankDetails() {
+    setSavingBankDetails(true);
+    setActionMessage(null);
+    setAuthError(null);
+    try {
+      const res = await fetch("/api/admin/qr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          qrUrl,
+          paymentMeta: {
+            ...fundPaymentMeta,
+            accountHolder: (fundPaymentMeta.accountHolder || "").trim(),
+            accountNumber: (fundPaymentMeta.accountNumber || "").trim(),
+            ifsc: (fundPaymentMeta.ifsc || "").trim(),
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to update bank details");
+      }
+      setActionMessage("Bank details updated.");
+      await fetchQr();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setAuthError(msg);
+    } finally {
+      setSavingBankDetails(false);
+    }
+  }
+
+  async function clearBankDetails() {
+    setSavingBankDetails(true);
+    setActionMessage(null);
+    setAuthError(null);
+    try {
+      const res = await fetch("/api/admin/qr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          qrUrl,
+          paymentMeta: {
+            ...fundPaymentMeta,
+            accountHolder: "",
+            accountNumber: "",
+            ifsc: "",
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to clear bank details");
+      }
+      setActionMessage("Bank details cleared.");
+      await fetchQr();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setAuthError(msg);
+    } finally {
+      setSavingBankDetails(false);
     }
   }
 
@@ -1581,6 +1646,26 @@ export default function AdminPage() {
                     placeholder="IFSC Code"
                   />
                 </div>
+
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => void updateBankDetails()}
+                    disabled={savingBankDetails}
+                    className="flex-1 rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
+                  >
+                    {savingBankDetails ? "Updating..." : "Update Bank Details"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void clearBankDetails()}
+                    disabled={savingBankDetails}
+                    className="flex-1 rounded-full bg-rose-500 px-3 py-1 text-[11px] font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
+                  >
+                    {savingBankDetails ? "Working..." : "Clear Bank Details"}
+                  </button>
+                </div>
+
                 {qrUrl && (
                   <div className="mt-2 flex justify-center">
                     <img

@@ -2174,7 +2174,7 @@ export default function DashboardPage() {
             {fundMethod === "netbanking" && (
               <div className="mt-3 rounded-2xl border border-slate-200 p-3 text-xs">
                 <p className="font-semibold text-slate-700">
-                  {paymentMeta?.bankName || "Bank details not configured"}
+                  {paymentMeta?.bankName || ""}
                 </p>
                 <p className="mt-1 text-slate-600">
                   A/C: {paymentMeta?.accountNumber || "-"}
